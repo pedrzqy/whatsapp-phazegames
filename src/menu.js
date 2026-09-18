@@ -181,9 +181,17 @@ function resolve(nodeId, input) {
   // O que NÃO pode passar continua não passando: "1080 Snowboarding" é nome de
   // jogo, e casar isso com uma opção mandaria o cliente para um ramo que ele
   // não escolheu. Por isso o número tem que estar SOZINHO na mensagem.
+  // E o `#` NA FRENTE, que é a dedução mais razoável que existe.
+  //
+  // O rodapé do menu diz "digite *#inicio* para voltar". O cliente lê aquilo,
+  // conclui que nesta loja comando começa com cerquilha, e responde "#5". Ele
+  // não errou: ele generalizou a única regra que a gente tinha ensinado.
+  //
+  // Recusar isso é devolver o menu para quem respondeu certo, e do lado dele o
+  // bot é que está quebrado.
   const semTecla = bruto.replace(/[️⃣]/g, '');
   const so = semTecla.match(
-    /^(?:(?:op[cç][aã]o|n[uú]mero|numero|item|n[º°]?)\s*)?(\d{1,2})\s*[.)\]}°º:\-–]?$/i,
+    /^#?\s*(?:(?:op[cç][aã]o|n[uú]mero|numero|item|n[º°]?)\s*)?#?\s*(\d{1,2})\s*[.)\]}°º:\-–]?$/i,
   );
   if (so) {
     const n = parseInt(so[1], 10);

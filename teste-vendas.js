@@ -409,6 +409,24 @@ const CLI = '5541999998888';
   t('opção inexistente não resolve', menu.resolve('main', '99') === null);
   t('vazio não resolve', menu.resolve('main', '') === null);
 
+  // ── O "#5" ─────────────────────────────────────────────────
+  //
+  // Print de cliente real: o menu diz no rodapé "digite *#inicio* para voltar".
+  // Ele leu aquilo, concluiu que nesta loja comando começa com cerquilha, e
+  // respondeu "#5".
+  //
+  // Ele não errou. Generalizou a única regra que a gente tinha ensinado, e
+  // recusar isso é devolver o menu para quem respondeu certo -- do lado dele,
+  // quem está quebrado é o bot.
+  t('"#5" resolve igual a "5"', menu.resolve('main', '#5')?.action === 'codigo', '#5');
+  t('com espaço depois do #', menu.resolve('main', '# 5')?.action === 'codigo');
+  t('com ponto junto também', menu.resolve('main', '#5.')?.action === 'codigo');
+  t('"opcao #5" também', menu.resolve('main', 'opcao #5')?.action === 'codigo');
+  // A tolerância não pode virar buraco: fora da faixa continua fora, e o
+  // comando de verdade continua sendo comando.
+  t('#9 fora da faixa não resolve', menu.resolve('main', '#9') === null);
+  t('#inicio não vira opção', menu.resolve('main', '#inicio') === null);
+
   const ld = menu.lista('duvidas', 'Não achei essa opção');
   t('o prefixo entra na descrição da lista', ld.description.startsWith('Não achei essa opção'));
   t('e a descrição não leva asterisco cru', !ld.description.includes('*'), ld.description);
