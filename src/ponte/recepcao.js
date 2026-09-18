@@ -434,10 +434,31 @@ function fazerResponder(from) {
  * — foi o que aconteceu com o aviso de horário.
  */
 function abrir(from, responder, guardado) {
-  // Já mandou a foto antes de pedir? Pula direto para o login.
-  if (guardado?.imagem) {
-    if (repetiuAgora(guardado, 'usuario')) return { acao: 'ignorar' };
-    return responder('usuario', MSG_PEDE_USUARIO, { etapa: 'usuario' });
+  // "PRECISO DO CÓDIGO" SEMPRE RECOMEÇA DO PASSO 1.
+  //
+  // Aqui havia um atalho: se já existisse uma foto guardada, o fluxo pulava
+  // direto para o login. A intenção era poupar um passo de quem já tinha
+  // mandado o print. O efeito foi o contrário, e o dono aponta isto como a
+  // MAIOR causa de erro.
+  //
+  // A foto guardada fica válida por 10 minutos e é guardada em silêncio (Caso
+  // 7), vinda de QUALQUER motivo: um print de tela de erro, um comprovante, a
+  // tela de verificação de um pedido ANTERIOR. Quando o cliente pedia o código,
+  // o bot dizia "Foto recebida ✅" e seguia com um print que não tinha nada a
+  // ver — e quem recebia essa foto do outro lado respondia o código de outra
+  // conta, ou não respondia nada.
+  //
+  // O pior é que para o cliente o passo a passo parecia estar funcionando: ele
+  // nunca soube que a foto usada não era a que ele teria tirado agora.
+  //
+  // Um passo a mais custa quinze segundos. Um código errado custa o
+  // atendimento inteiro, e o cliente descobre na tela do console.
+  //
+  // O que já estava guardado é APAGADO, e não só ignorado: deixar ali faria o
+  // Caso 2 (usuário chega e encontra foto guardada) reaproveitar a mesma foto
+  // velha logo em seguida, pela porta do lado.
+  if (guardado?.imagem || guardado?.usuario) {
+    console.log(`[ponte/recepcao] ${from} pediu codigo — descartando foto/usuario anteriores`);
   }
 
   // FILA OCUPADA: avisa e trava AQUI, antes de pedir qualquer coisa.

@@ -473,11 +473,41 @@ r2 = recepcao.avaliar(CLI7, 'meu email', null);
 t('explica o formato', r2.acao === 'responder', r2.acao);
 t('dá exemplo de usuário', /rrrtsr223/.test(r2.mensagem || ''));
 
-bloco('fluxo guiado — foto antes do pedido');
+// ── "preciso do código" SEMPRE recomeça do passo 1 ─────────
+//
+// Aqui havia um atalho: com uma foto já guardada, o fluxo pulava para o login.
+// O dono aponta isto como a MAIOR causa de erro, e o motivo é o que a foto
+// guardada pode ser.
+//
+// Ela vale 10 minutos e é guardada em SILÊNCIO, venha de onde vier: print de
+// erro, comprovante, a tela de verificação de um pedido anterior. O bot dizia
+// "Foto recebida ✅" e seguia com um print que não tinha nada a ver. Do outro
+// lado respondiam o código de outra conta, ou não respondiam.
+//
+// E para o cliente o passo a passo parecia estar funcionando: ele nunca soube
+// que a foto usada não era a que ele teria tirado agora.
+bloco('fluxo guiado — foto antiga NÃO é reaproveitada');
 const CLI8 = '5541966666666';
 t('foto solta segue calada', recepcao.avaliar(CLI8, '', 'tela4.jpg').acao === 'ignorar');
 r2 = recepcao.avaliar(CLI8, 'preciso do codigo', null);
-t('pedido depois pula direto pro usuário', /login\/usu/i.test(r2.mensagem || ''), r2.mensagem);
+t('o pedido volta a pedir a FOTO', /foto da tela do console/i.test(r2.mensagem || ''), r2.mensagem);
+t('  e NÃO pula para o login', !/login\/usu/i.test(r2.mensagem || ''));
+t('  com a imagem de exemplo junto', r2.exemplo === 'console', String(r2.exemplo));
+
+// A foto velha tem que sumir, e não só ser ignorada: deixada ali, o usuário
+// que chegasse em seguida a reaproveitaria pela porta do lado (Caso 2).
+r2 = recepcao.avaliar(CLI8, 'rrtt9321', null);
+t('  e o usuário sozinho não dispara com a foto velha', r2.acao !== 'pedir', r2.acao);
+t('  ele pede o print de novo', /print da tela|foto da tela/i.test(r2.mensagem || ''), r2.mensagem);
+
+// E o caminho completo continua funcionando do começo ao fim.
+const CLI8B = '5541966665555';
+recepcao.avaliar(CLI8B, 'preciso do codigo', null);
+r2 = recepcao.avaliar(CLI8B, '', 'tela-nova.jpg');
+t('a foto NOVA avança para o login', /login\/usu/i.test(r2.mensagem || ''), r2.mensagem);
+r2 = recepcao.avaliar(CLI8B, 'rrtt9321', null);
+t('  e o fluxo fecha com a foto certa', r2.acao === 'pedir' && r2.imagem === 'tela-nova.jpg',
+  `${r2.acao} / ${r2.imagem}`);
 
 bloco('detecção de "quero o código"');
 t('preciso do codigo', recepcao.pedeCodigo('preciso do codigo') === true);
