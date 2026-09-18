@@ -309,10 +309,13 @@ const zerar = () => {
     t(`#admin ${i + 1} continua sendo ${id}`, chavesMod.CATALOGO[i].id === id,
       chavesMod.CATALOGO[i].id);
   });
-  // "Economia nos bastidores" era a 9ª e saiu: com um modelo só nos dois lados,
-  // ela não tinha mais o que escolher. Era a ÚLTIMA, então nenhum número mudou
-  // — e é isso que este teste guarda, porque o dono decora a POSIÇÃO.
-  t('e a 9 não existe mais', chavesMod.CATALOGO.length === 8,
+  // "Economia nos bastidores" era a 9ª e saiu; "Horário do grupo" entrou no
+  // lugar dela, no FIM. As duas mexidas foram na ponta de proposito: a ordem é
+  // o número que o dono digita, e ele decora a POSIÇÃO. O que este teste guarda
+  // é que as OITO de cima nunca se mexem.
+  t('a 9 agora é o horário do grupo', chavesMod.CATALOGO[8]?.id === 'grupo',
+    chavesMod.CATALOGO[8]?.id);
+  t('  e não apareceu uma décima sem querer', chavesMod.CATALOGO.length === 9,
     `${chavesMod.CATALOGO.length} chaves`);
 
   // Daqui para baixo é a chave 2, "Conversa livre". Ela passou a perguntar pelo

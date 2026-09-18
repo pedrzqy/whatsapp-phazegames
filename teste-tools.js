@@ -933,6 +933,23 @@ nerix.checkPayment = async (codigo) => {
   memoria.esquecer(QUEM);
   t('#esquecer limpa tudo', memoria.paraOPrompt(QUEM) === '');
 
+  // ── O grupo abre e fecha sozinho ───────────────────────────
+  //
+  // Janela padrao 9h-23h. O que importa aqui e a CONTA da janela: errar o sinal
+  // de uma comparacao deixa o grupo trancado a noite toda, e o desfecho e voce
+  // descobrindo por reclamacao de cliente.
+  bloco('horario do grupo');
+  const comunidade = require('./src/community');
+
+  t('9h da manha: aberto', comunidade.deveEstarAberto(9) === true);
+  t('meio-dia: aberto', comunidade.deveEstarAberto(12) === true);
+  t('22h: ainda aberto', comunidade.deveEstarAberto(22) === true);
+  // 23 e a hora de FECHAR, entao 23h ja esta fechado. O limite de cima e
+  // exclusivo de proposito: "aberto ate as 23h" significa que as 23h acabou.
+  t('23h: fechado', comunidade.deveEstarAberto(23) === false);
+  t('3h da manhã: fechado', comunidade.deveEstarAberto(3) === false);
+  t('8h: ainda fechado', comunidade.deveEstarAberto(8) === false);
+
   globalThis.fetch = fetchReal;
 
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));

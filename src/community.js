@@ -20,6 +20,7 @@ const config = require('./config');
 const nerix = require('./nerix');
 const news = require('./news');
 const sender = require('./sender');
+const evolution = require('./evolution');
 const variator = require('./variator');
 const ai = require('./ai');
 
@@ -326,12 +327,71 @@ async function publish(text, image) {
 }
 
 // ─── Agendador (CADÊNCIA por tipo: cada conteúdo tem intervalo e horário) ──
+/**
+ * O grupo deveria estar aberto nesta hora?
+ *
+ * Aceita janela que cruza a meia-noite (abre 9, fecha 2), porque a alternativa
+ * é alguém configurar isso um dia e descobrir que o grupo nunca mais abriu.
+ */
+function deveEstarAberto(hour) {
+  const { abreHora: abre, fechaHora: fecha } = cfg;
+  return abre <= fecha ? hour >= abre && hour < fecha : hour >= abre || hour < fecha;
+}
+
+/**
+ * Deixa o portão do grupo no estado que o relógio pede.
+ *
+ * RECONCILIAÇÃO, e não "às 23h feche". A diferença é o que acontece quando o
+ * bot não está de pé na hora exata: com evento, o horário passa e o grupo fica
+ * do jeito errado até o dia seguinte — trancado a noite toda e a manhã inteira,
+ * e você só descobre por reclamação. Comparando o estado a cada volta, o
+ * primeiro tick depois de qualquer queda conserta sozinho.
+ *
+ * Por isso também o estado só é gravado DEPOIS de a chamada dar certo: falhou,
+ * ele continua diferente do desejado e a próxima volta tenta de novo.
+ */
+async function ajustarPortao(hour) {
+  if (!cfg.portaoLigado) return;
+  if (!require('./chaves').ligada('grupo')) return;
+
+  const aberto = deveEstarAberto(hour);
+  if (state.grupoAberto === aberto) return; // já está como deveria
+
+  if (cfg.dryRun) {
+    console.log(`[community] (DRY-RUN) o grupo ${aberto ? 'abriria' : 'fecharia'} agora`);
+    state.grupoAberto = aberto;
+    saveState();
+    return;
+  }
+
+  try {
+    await evolution.portaoDoGrupo(cfg.groupJid, aberto, cfg.instance ? { instance: cfg.instance } : {});
+    state.grupoAberto = aberto;
+    saveState();
+    console.log(`[community] grupo ${aberto ? 'ABERTO' : 'FECHADO'} (${cfg.abreHora}h as ${cfg.fechaHora}h)`);
+  } catch (err) {
+    // Não propaga: o portão não pode derrubar os anúncios, que são a razão de
+    // este agendador existir. O motivo já foi para o log no evolution.js.
+    console.warn('[community] portao do grupo nao mudou agora, tento na proxima volta');
+  }
+}
+
+/** Para o #status: o grupo está fechado neste instante? */
+function grupoFechado() {
+  if (!cfg.portaoLigado || !cfg.groupJid) return false;
+  return !deveEstarAberto(brt(Date.now()).hour);
+}
+
 async function tick() {
   if (running || !cfg.enabled || !cfg.groupJid) return;
   running = true;
   try {
     const now = Date.now();
     const { hour, dateKey } = brt(now);
+
+    // ANTES dos anúncios, de propósito: se o horário de abrir chegou, o grupo
+    // abre nesta volta e o anúncio das 10h já cai num grupo aberto.
+    await ajustarPortao(hour);
     state.lastPostAt = state.lastPostAt || {};
     state.slots = state.slots || {};
 
@@ -424,4 +484,4 @@ function start() {
 
 function stop() { if (timer) { clearInterval(timer); timer = null; } }
 
-module.exports = { start, stop, tick, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
+module.exports = { start, stop, tick, grupoFechado, deveEstarAberto, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };

@@ -165,6 +165,29 @@ const CATALOGO = [
   //
   // Ela era a ÚLTIMA da lista, então tirar não mexeu no número de nenhuma
   // outra. Se um dia voltar um segundo modelo, ela volta aqui no fim.
+  //
+  // E a de baixo entrou no FIM pelo mesmo motivo: a ordem é o número que ele
+  // digita, e ele decora a posição.
+  {
+    id: 'grupo',
+    curto: 'Fecha o grupo de madrugada',
+    nome: 'Horário do grupo',
+    explica:
+      'Fora do horário, só você escreve no grupo. Ligado, ele fecha e abre ' +
+      'sozinho todo dia. Desligado, fica sempre aberto.',
+    padrao: () => config.community.portaoLigado,
+    // Risco baixo: o pior caso é o grupo ficar aberto de madrugada, que é
+    // exatamente como ele está hoje.
+    risco: 'baixo',
+    // Sem ser admin do grupo, a API aceita a chamada e nada acontece — o tipo
+    // de falha que passa meses despercebida. Aqui só dá para conferir o que é
+    // barato de conferir: se existe grupo configurado.
+    impedimento: () => {
+      if (!config.community.enabled) return 'o agente de comunidade está desligado (COMMUNITY_ENABLED)';
+      if (!config.community.groupJid) return 'não há grupo configurado (COMMUNITY_GROUP_JID)';
+      return null;
+    },
+  },
 ];
 
 const porId = (id) => CATALOGO.find((c) => c.id === id) || null;

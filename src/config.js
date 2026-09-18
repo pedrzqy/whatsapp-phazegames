@@ -225,6 +225,17 @@ const config = {
     instance: process.env.COMMUNITY_INSTANCE || '',
     // Varredura do agendador.
     checkIntervalMs: Number(process.env.COMMUNITY_CHECK_INTERVAL_MS || 5 * 60 * 1000),
+
+    // ── O grupo abre e fecha sozinho ──────────────────────
+    //
+    // Fora da janela, só administrador escreve. É a mesma chavinha do app do
+    // WhatsApp, e o número do bot precisa ser ADMIN do grupo.
+    //
+    // Horas em BRT, mesma convenção do resto do agendador. A janela pode
+    // cruzar a meia-noite (ex.: abre 9, fecha 2) que a conta continua certa.
+    portaoLigado: process.env.COMMUNITY_PORTAO !== 'false',
+    abreHora: Number(process.env.COMMUNITY_ABRE_HORA ?? 9),
+    fechaHora: Number(process.env.COMMUNITY_FECHA_HORA ?? 23),
     // AGENDA por tipo de conteúdo: cada um tem sua CADÊNCIA (a cada N dias) e HORÁRIO (BRT).
     // Padrão: 1 review por dia (12h) e 1 notícia a cada 2 dias (19h). everyDays=0 desativa o tipo.
     // Cada entrada = 1 post, no seu HORÁRIO, a cada `everyDays` dias. Mesmo tipo pode

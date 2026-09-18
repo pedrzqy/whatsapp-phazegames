@@ -555,6 +555,19 @@ async function executar(texto, de = '') {
       }
     }
 
+    // O grupo fechado é estado normal de madrugada, mas ele tem que APARECER.
+    //
+    // Sem esta linha, "o grupo está fechado" e "o portão travou fechado" são a
+    // mesma tela: nenhuma. E travado é o que acontece se a chamada para o
+    // WhatsApp falhar de noite — o #status é o lugar onde isso deixa de ser
+    // invisível.
+    try {
+      if (require('../community').grupoFechado()) {
+        const abre = require('../config').community.abreHora;
+        linhas.push(`🔒 Grupo fechado — abre às ${abre}h`);
+      }
+    } catch { /* o portão não pode derrubar o #status */ }
+
     // 5) Estado de operação: o que está ligado agora.
     const d = limites.disjuntor();
     if (d.estado === 'aberto') {

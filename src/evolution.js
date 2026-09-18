@@ -91,6 +91,39 @@ async function conectarInstancia(opts = {}) {
 }
 
 /**
+ * Abre ou fecha o grupo para mensagens de quem não é admin.
+ *
+ * `announcement` é o nome do WhatsApp para "só administradores enviam". É a
+ * mesma chavinha do app, e o número do bot PRECISA ser admin do grupo — sem
+ * isso a API aceita a chamada e nada acontece, que é o tipo de falha que passa
+ * despercebida por semanas.
+ *
+ * @param {string} groupJid  o grupo (…@g.us)
+ * @param {boolean} aberto   true = todo mundo escreve; false = só admin
+ */
+async function portaoDoGrupo(groupJid, aberto, opts = {}) {
+  const instance = opts.instance || config.evolution.instance;
+  const action = aberto ? 'not_announcement' : 'announcement';
+  try {
+    const { data } = await http.post(
+      `/group/updateSetting/${instance}`,
+      { action },
+      { params: { groupJid } },
+    );
+    return data;
+  } catch (err) {
+    // O CORPO do erro, não só o status. A rota de grupo muda de nome entre
+    // versões da Evolution, e um 404 sem corpo não diz se o caminho está errado,
+    // se o grupo não existe ou se o bot não é admin — três consertos diferentes.
+    const detalhe = err.response?.data
+      ? JSON.stringify(err.response.data).slice(0, 300)
+      : err.message;
+    console.error(`[evolution] portao do grupo (${action}) falhou ${err.response?.status || ''}: ${detalhe}`);
+    throw err;
+  }
+}
+
+/**
  * Envia um menu como LISTA nativa do WhatsApp.
  *
  * Lista e não botão: o WhatsApp aceita no máximo 3 botões de resposta, e o
@@ -162,5 +195,6 @@ module.exports = {
   sendList,
   estadoInstancia,
   conectarInstancia,
+  portaoDoGrupo,
   getBase64FromMediaMessage,
 };
