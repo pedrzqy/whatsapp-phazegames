@@ -883,6 +883,56 @@ nerix.checkPayment = async (codigo) => {
   t('  e falha na hora', Boolean(erroSemChave), erroSemChave?.message);
   process.env.DEEPSEEK_API_KEY = chaveAntes;
 
+  // ── A MEMÓRIA DO ATENDIMENTO ───────────────────────────────
+  //
+  // Relato do dono: "o cliente manda uma mensagem e a IA responde algo nada a
+  // ver". O modelo respondia praticamente sem contexto: 4 turnos de histórico,
+  // 6 horas de validade, e nada guardado sobre a pessoa.
+  bloco('memoria do atendimento');
+  const memoria = require('./src/memoria');
+  const QUEM = '5541900002222';
+
+  t('sem memoria, nao entope o prompt', memoria.paraOPrompt(QUEM) === '',
+    JSON.stringify(memoria.paraOPrompt(QUEM)));
+
+  // O pedido que a ferramenta achou vira memoria, escrito por CODIGO. E de
+  // graca: o dado ja foi buscado, so estava sendo jogado fora depois de um uso.
+  memoria.anotarPedido(QUEM, {
+    codigo: 'NX-1054',
+    status: 'pago',
+    itens: [{ nome: 'Hollow Knight' }],
+  });
+  const bloco1 = memoria.paraOPrompt(QUEM);
+  t('o pedido consultado vira memoria', /NX-1054/.test(bloco1), bloco1.slice(0, 80));
+  t('  com o status junto', /pago/.test(bloco1));
+  t('  e o que ele comprou', /Hollow Knight/.test(bloco1));
+
+  // As duas regras do fim do bloco nao sao enfeite: uma impede o bot de recitar
+  // a ficha (assustador), a outra resolve o conflito mais provavel -- a memoria
+  // e de ontem, o cliente esta falando agora.
+  t('avisa que NAO e mensagem do cliente', /não é mensagem do cliente/i.test(bloco1));
+  t('proibe recitar para o cliente', /NUNCA recite/i.test(bloco1));
+  t('o cliente vence a memoria velha', /ELE tem razão/i.test(bloco1));
+
+  // Assunto velho NAO entra. "Ele esta resolvendo o pedido X" e verdade por
+  // algumas horas; uma semana depois e uma afirmacao errada dita com confianca.
+  require('./src/store').saveContact(QUEM, {
+    memoria: { ...memoria.ler(QUEM), assuntoEm: Date.now() - 10 * 24 * 60 * 60 * 1000 },
+  });
+  t('assunto velho nao e ressuscitado', !/NX-1054/.test(memoria.paraOPrompt(QUEM)),
+    memoria.paraOPrompt(QUEM));
+
+  // A ficha e reescrita de N em N turnos, nao em toda mensagem: uma chamada por
+  // resposta dobraria o custo do atendimento por um resumo que so vale depois.
+  const OUTRO = '5541900003333';
+  const disparos = [1, 2, 3, 4].map(() => memoria.precisaResumir(OUTRO));
+  t('a ficha nao e reescrita a cada mensagem', disparos.filter(Boolean).length === 1,
+    JSON.stringify(disparos));
+  t('  e dispara no quarto turno', disparos[3] === true);
+
+  memoria.esquecer(QUEM);
+  t('#esquecer limpa tudo', memoria.paraOPrompt(QUEM) === '');
+
   globalThis.fetch = fetchReal;
 
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));

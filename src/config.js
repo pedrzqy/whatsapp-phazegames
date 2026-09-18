@@ -108,7 +108,21 @@ const config = {
   llm: {
     maxTokens: Number(process.env.LLM_MAX_TOKENS || 600),
     // Nº de trocas (usuário+assistente) mantidas no histórico por contato.
-    maxHistory: Number(process.env.LLM_MAX_HISTORY || 4),
+    //
+    // ERA 4, e era pouco demais. Um turno com consulta de pedido ocupa TRÊS
+    // mensagens (o pedido da ferramenta, o resultado, a resposta), então quatro
+    // turnos somem em duas perguntas. O cliente escrevia "e o outro?" e o
+    // modelo já não tinha o primeiro na frente -- respondia qualquer coisa.
+    //
+    // Dez cabe numa conversa de compra inteira. O histórico viaja depois do
+    // trecho cacheado, no preço cheio, mas são uns poucos milhares de tokens a
+    // mais por resposta: centavos por mês contra uma venda perdida por resposta
+    // fora de contexto.
+    maxHistory: Number(process.env.LLM_MAX_HISTORY || 10),
+    // Por quanto tempo o histórico de um contato continua valendo.
+    //
+    // Separado da janela de saudação de propósito: ver getHistory no ai.js.
+    memoriaMs: Number(process.env.LLM_MEMORIA_HORAS || 48) * 60 * 60 * 1000,
     // Prazo TOTAL para a IA responder, contando as idas e vindas de ferramenta.
     // Estourado, o atendimento cai no menu, que responde na hora.
     deadlineMs: Number(process.env.LLM_DEADLINE_MS || 25000),

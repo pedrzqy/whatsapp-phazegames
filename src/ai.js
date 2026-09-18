@@ -20,6 +20,7 @@ const tools = require('./tools');
 const knowledge = require('./knowledge');
 const store = require('./store');
 const deepseek = require('./deepseek');
+const memoria = require('./memoria');
 const telas = require('./telas');
 
 /**
@@ -82,7 +83,7 @@ function persistHistories() {
     histSaveTimer = null;
     try {
       // Poda conversas expiradas antes de salvar (mantém o arquivo enxuto).
-      const gapMs = config.welcome.sessionWindowHours * 60 * 60 * 1000;
+      const gapMs = config.llm.memoriaMs;
       const now = Date.now();
       const obj = {};
       for (const [from, entry] of histories) {
@@ -100,8 +101,17 @@ function persistHistories() {
 function getHistory(from) {
   const entry = histories.get(from);
   if (!entry) return [];
-  // Expira o contexto após a janela de sessão (nova conversa = contexto limpo).
-  const gapMs = config.welcome.sessionWindowHours * 60 * 60 * 1000;
+  // A janela do HISTORICO nao e mais a da saudacao, e as duas respondem
+  // perguntas diferentes.
+  //
+  // `sessionWindowHours` (6h) decide "isto e uma conversa nova?", e e por isso
+  // que existe: depois de seis horas calado, cumprimentar de novo faz sentido.
+  // Mas ela tambem apagava o CONTEXTO, e ai o cliente voltava no dia seguinte
+  // para continuar o mesmo assunto e o bot nao sabia mais nada -- o que virava
+  // "a IA responde algo nada a ver".
+  //
+  // Lembrar por dois dias nao atrapalha a saudacao: sao dois relogios agora.
+  const gapMs = config.llm.memoriaMs;
   if (Date.now() - entry.updatedAt > gapMs) {
     histories.delete(from);
     return [];
@@ -609,7 +619,12 @@ async function reply(from, userText, pushName, extra = {}) {
   //
   // Formato OpenAI (`image_url` com data URI) porque é o do resto do arquivo, e
   // é o que a API entende direto quando o modelo enxergar de novo.
-  const marca = marcaDoCliente(contact?.name || pushName);
+  // A MEMÓRIA entra no turno DELE, nunca no texto fixo.
+  //
+  // O texto fixo é cacheado por prefixo: um dado diferente por pessoa lá dentro
+  // faz cada contato ter o próprio prefixo, e o cache nunca é aproveitado. É o
+  // mesmo motivo de o nome já morar aqui embaixo.
+  const marca = memoria.paraOPrompt(from) + marcaDoCliente(contact?.name || pushName);
   const img = extra.imagemBase64;
   let conteudoDoTurno = marca + userText;
   if (img && veImagem()) {
@@ -653,6 +668,17 @@ async function reply(from, userText, pushName, extra = {}) {
         // `extra` carrega contexto da mensagem atual (ex.: imagem que o cliente
         // acabou de mandar) para ferramentas que precisam dele.
         const result = await tools.execute(call.function.name, args, { from, pushName, ...extra });
+
+        // O PEDIDO QUE A FERRAMENTA ACHOU vira memória, de graça.
+        //
+        // Ele já foi buscado e já foi usado uma vez; jogá-lo fora depois disso é
+        // o que fazia o cliente dizer "e o meu pedido?" duas mensagens depois e
+        // o modelo ter que adivinhar de qual. Escrito por código, a partir do
+        // que a loja respondeu, então é fato e não interpretação.
+        const achado = result?.pedidos?.[0] || (result?.codigo ? result : null);
+        if (achado) memoria.anotarPedido(from, achado);
+        if (call.function.name === 'falar_com_atendente') memoria.limparAssunto(from);
+
         messages.push({
           role: 'tool',
           tool_call_id: call.id,
@@ -675,6 +701,19 @@ async function reply(from, userText, pushName, extra = {}) {
   // acrescentado à parte porque a última resposta pode ter vindo de um passo em
   // que o modelo só devolveu texto — ela não está dentro do array.
   pushHistory(from, [...messages.slice(inicioDoTurno), { role: 'assistant', content }]);
+
+  // A FICHA é reescrita DEPOIS, e fora do caminho da resposta.
+  //
+  // Sem `await` de propósito: o cliente já tem o que perguntou, e fazer ele
+  // esperar por um resumo que é para a PRÓXIMA conversa seria pagar agora por
+  // um benefício de amanhã. O `.catch` não é zelo excessivo — promessa solta
+  // que rejeita derruba o processo inteiro no Node.
+  if (memoria.precisaResumir(from)) {
+    memoria
+      .atualizarFicha(from, getHistory(from))
+      .catch((err) => console.warn(`[memoria] ficha de ${from} nao saiu: ${err.message}`));
+  }
+
   return content;
 }
 
