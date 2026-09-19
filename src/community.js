@@ -31,7 +31,13 @@ let timer = null;
 let running = false;
 
 // ─── Estado persistido (quais slots já postaram + rotação de conteúdo) ───
-const DATA_DIR = path.join(__dirname, '..', 'data');
+//
+// PONTE_DATA_DIR pelo mesmo motivo do store.js, do estado.js e do vendas.js:
+// este arquivo era o ultimo dos quatro que nao honrava a variavel, e o efeito e
+// silencioso. Um teste que encoste no agendador grava no community.json de
+// PRODUCAO -- e ali mora quais anuncios ja sairam hoje e se o grupo esta aberto.
+// Rodar a suite no servidor podia reabrir o grupo de madrugada.
+const DATA_DIR = process.env.PONTE_DATA_DIR || path.join(__dirname, '..', 'data');
 const FILE = path.join(DATA_DIR, 'community.json');
 let state = { posts: {}, rotation: 0 };
 try {
@@ -374,9 +380,24 @@ function deveEstarAberto(hour) {
  */
 const REAPLICAR_MS = 60 * 60 * 1000;
 
+/**
+ * Quanto tempo uma abertura/fechamento na mão segura o agendador.
+ *
+ * Sem isto, testar seria impossível: você abre o grupo à meia-noite pelo
+ * comando e, até cinco minutos depois, o agendador fecha de novo — parecendo
+ * que o comando não funcionou.
+ *
+ * Meia hora é tempo de testar e curto o bastante para ninguém esquecer o
+ * automático desligado a noite toda. Passou, o horário volta a mandar sozinho.
+ */
+const MANUAL_MS = 30 * 60 * 1000;
+
 async function ajustarPortao(hour) {
   if (!cfg.portaoLigado) return;
   if (!require('./chaves').ligada('grupo')) return;
+
+  // Mexeram na mão agora há pouco: o agendador espera a vez dele.
+  if (Date.now() < (state.portaoManualAte || 0)) return;
 
   const aberto = deveEstarAberto(hour);
   const faz = Date.now() - (state.portaoEm || 0);
@@ -516,6 +537,52 @@ async function saudar(tipo, dateKey) {
   guardarSaudacao(texto); // já salva o estado
   await publish(texto + rodape);
   console.log(`[community] saudacao de ${tipo} publicada`);
+}
+
+/**
+ * Abre ou fecha o grupo AGORA, na mão. Para testar sem esperar o horário.
+ *
+ * Segura o agendador por meia hora (ver MANUAL_MS), senão a próxima volta
+ * desfaria o que você acabou de fazer e pareceria que o comando não funcionou.
+ *
+ * @returns {Promise<{ok:boolean, erro?:string}>}
+ */
+async function mexerNoPortao(aberto) {
+  if (!cfg.groupJid) return { ok: false, erro: 'não há grupo configurado' };
+
+  try {
+    if (!cfg.dryRun) {
+      await evolution.portaoDoGrupo(cfg.groupJid, aberto, cfg.instance ? { instance: cfg.instance } : {});
+    }
+    state.grupoAberto = aberto;
+    state.portaoEm = Date.now();
+    state.portaoManualAte = Date.now() + MANUAL_MS;
+    saveState();
+    console.log(`[community] grupo ${aberto ? 'ABERTO' : 'FECHADO'} na mao (automatico volta em 30 min)`);
+    return { ok: true };
+  } catch (err) {
+    // O motivo CRU para quem mandou o comando. É um teste: quem está lendo quer
+    // saber o que deu errado, não uma frase gentil. O erro completo já foi para
+    // o log no evolution.js.
+    const detalhe = err.response?.data ? JSON.stringify(err.response.data).slice(0, 200) : err.message;
+    return { ok: false, erro: `${err.response?.status || ''} ${detalhe}`.trim() };
+  }
+}
+
+/** Foto do portão, para o comando do operador. */
+function estadoDoPortao() {
+  const { hour, minute } = brt(Date.now());
+  const manualPor = Math.max(0, (state.portaoManualAte || 0) - Date.now());
+  return {
+    ligado: cfg.portaoLigado && Boolean(cfg.groupJid),
+    temGrupo: Boolean(cfg.groupJid),
+    aberto: state.grupoAberto,
+    deveriaEstarAberto: deveEstarAberto(hour),
+    abreHora: cfg.abreHora,
+    fechaHora: cfg.fechaHora,
+    agora: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+    manualPorMin: Math.round(manualPor / 60000),
+  };
 }
 
 /** Para o #status: o grupo está fechado neste instante? */
@@ -659,4 +726,4 @@ function stop() { if (timer) { clearInterval(timer); timer = null; } }
 // A peneira das saudações vai exportada para o teste: é ela que decide o que de
 // texto GERADO chega num grupo de centenas de pessoas sem ninguém ler antes.
 // Sem alcançá-la, o teste dublaria justamente o que deveria estar medindo.
-module.exports = { start, stop, tick, grupoFechado, deveEstarAberto, saudacaoAprovada, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
+module.exports = { start, stop, tick, grupoFechado, deveEstarAberto, saudacaoAprovada, mexerNoPortao, estadoDoPortao, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };

@@ -35,6 +35,7 @@ const AJUDA = [
   '*Comandos*',
   '',
   '*#admin* — painel: liga e desliga cada função',
+  '*#grupo* — abre ou fecha o grupo na mão, para testar o horário',
   '*#status* — testa tudo e diz o que está errado',
   '*#fila* — quem está sendo atendido e quem espera',
   '*#vendas* — vendas de hoje, faturamento e o que falta entregar',
@@ -68,7 +69,7 @@ const min = (ms) => Math.round(ms / 60000);
 // decidir e para logar o motivo de ter ignorado), e duas copias divergiriam --
 // que e como o "script" escapou do filtro de vocabulario uma vez.
 const RE_COMANDOS =
-  /^#(fila|status|vendas|historico|liberar|ok|enviar|editar|responder|casos|analisar|admin|nao|não|pular|ajuda|sms|taobao|teste|limpar|destravar|atender|auto|recarregar)\b/i;
+  /^#(fila|status|vendas|historico|liberar|ok|enviar|editar|responder|casos|analisar|admin|nao|não|pular|ajuda|sms|taobao|teste|limpar|destravar|atender|auto|recarregar|grupo)\b/i;
 
 /** É comando de operador? */
 function ehComando(from, texto) {
@@ -138,6 +139,44 @@ async function executar(texto, de = '') {
   const argumento = palavras.join(' ');
 
   if (cmd === 'ajuda') return AJUDA;
+
+  // ── #grupo — abrir e fechar na mão, para testar ─────────
+  //
+  // O portão é automático e só age de hora em hora. Sem um jeito de mexer na
+  // mão, a única forma de saber se ele funciona é esperar 23h — e se não
+  // funcionar, esperar mais um dia para testar de novo.
+  //
+  // Comando próprio e não uma linha no #admin: o painel é de LIGA e DESLIGA, e
+  // isto é uma ação. Misturar as duas coisas ali faria o painel deixar de ser
+  // lido como o que ele é.
+  if (cmd === 'grupo') {
+    const comunidade = require('../community');
+    const acao = (id || '').toLowerCase();
+
+    if (/^(abrir|abre|abre?r|on)$/.test(acao) || /^(fechar|fecha|off)$/.test(acao)) {
+      const abrir = /^(abrir|abre|abre?r|on)$/.test(acao);
+      const r = await comunidade.mexerNoPortao(abrir);
+      if (!r.ok) return `Não consegui ${abrir ? 'abrir' : 'fechar'}: ${r.erro}`;
+      return (
+        `${abrir ? '🔓 Grupo ABERTO' : '🔒 Grupo FECHADO'} agora.\n\n` +
+        `_O horário automático volta a mandar em 30 minutos._`
+      );
+    }
+
+    const e = comunidade.estadoDoPortao();
+    if (!e.temGrupo) return 'Não há grupo configurado (COMMUNITY_GROUP_JID).';
+
+    const agora = e.aberto === undefined ? 'não sei ainda' : e.aberto ? 'aberto' : 'fechado';
+    return (
+      `🕘 *Horário do grupo* — ${e.agora}\n\n` +
+      `Agora: *${agora}*\n` +
+      `Pelo horário deveria estar: *${e.deveriaEstarAberto ? 'aberto' : 'fechado'}*\n` +
+      `Abre ${e.abreHora}h · fecha ${e.fechaHora}h\n` +
+      (e.ligado ? '' : '\n⚠️ O automático está desligado (#admin 9).\n') +
+      (e.manualPorMin ? `\n_Mexido na mão: o automático volta em ${e.manualPorMin} min._\n` : '') +
+      `\n*#grupo abrir* · *#grupo fechar*`
+    );
+  }
 
   // ── #teste ─────────────────────────────────────────────
   // O número do operador é ignorado pela recepção de propósito: ele recebe os

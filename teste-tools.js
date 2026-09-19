@@ -26,6 +26,11 @@ process.env.NERIX_API_KEY = 'teste';
 process.env.PONTE_OPERADOR_NUMERO = '5541999999999';
 process.env.PONTE_BRACO_KEY = 'teste';
 process.env.PONTE_DATA_DIR = require('path').join(require('os').tmpdir(), 'phaze-teste-tools');
+// O agendador do grupo precisa de um grupo para agir, e de nao estar em
+// dry-run: sem isto ele devolve "nao ha grupo configurado" e o teste mede a
+// recusa em vez do caminho.
+process.env.COMMUNITY_GROUP_JID = '120363000000000000@g.us';
+process.env.COMMUNITY_DRY_RUN = 'false';
 
 // Duble do fetch, instalado ANTES de requerer o ai.js.
 //
@@ -949,6 +954,42 @@ nerix.checkPayment = async (codigo) => {
   t('23h: fechado', comunidade.deveEstarAberto(23) === false);
   t('3h da manhã: fechado', comunidade.deveEstarAberto(3) === false);
   t('8h: ainda fechado', comunidade.deveEstarAberto(8) === false);
+
+  // ── Abrir e fechar na mão ──────────────────────────────────
+  //
+  // O portao e automatico e so age de hora em hora. Sem um jeito de mexer na
+  // mao, a unica forma de saber se ele funciona e esperar as 23h -- e se nao
+  // funcionar, esperar mais um dia para tentar de novo.
+  //
+  // O detalhe que faz o teste ser util e a TRAVA: sem ela, a proxima volta do
+  // agendador desfaria o que voce acabou de fazer, e pareceria que o comando
+  // nao funcionou.
+  bloco('abrir e fechar o grupo na mao');
+  const evolucao = require('./src/evolution');
+  const portaoReal = evolucao.portaoDoGrupo;
+  let pedidoAoWhats = null;
+  evolucao.portaoDoGrupo = async (jid, aberto) => { pedidoAoWhats = { jid, aberto }; return {}; };
+
+  const antesDoManual = comunidade.estadoDoPortao();
+  const fechou = await comunidade.mexerNoPortao(false);
+  t('fechar na mão funciona', fechou.ok === true, JSON.stringify(fechou));
+  t('  e pede o fechamento ao WhatsApp', pedidoAoWhats?.aberto === false,
+    JSON.stringify(pedidoAoWhats));
+
+  const depoisDoManual = comunidade.estadoDoPortao();
+  t('  o estado passa a dizer fechado', depoisDoManual.aberto === false, String(depoisDoManual.aberto));
+  t('  e o automático fica segurado por um tempo', depoisDoManual.manualPorMin > 0,
+    `${depoisDoManual.manualPorMin} min`);
+  t('  que antes não existia', !antesDoManual.manualPorMin, String(antesDoManual.manualPorMin));
+
+  // Falha vira mensagem para quem mandou o comando, nao excecao solta: e um
+  // teste, e quem esta lendo quer saber o que deu errado.
+  evolucao.portaoDoGrupo = async () => { const e = new Error('sem permissao'); e.response = { status: 403 }; throw e; };
+  const deuRuim = await comunidade.mexerNoPortao(true);
+  t('erro do WhatsApp vira motivo, não exceção', deuRuim.ok === false && /403|permissao/.test(deuRuim.erro || ''),
+    deuRuim.erro);
+
+  evolucao.portaoDoGrupo = portaoReal;
 
   // ── A peneira das saudações ────────────────────────────────
   //
