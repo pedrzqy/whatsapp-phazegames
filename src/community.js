@@ -51,7 +51,13 @@ const brl = (n) => 'R$ ' + Number(n).toFixed(2).replace('.', ',');
 /** Hora atual no fuso de Brasília (UTC-3). */
 function brt(now) {
   const d = new Date(now - 3 * 60 * 60 * 1000);
-  return { hour: d.getUTCHours(), dateKey: d.toISOString().slice(0, 10) };
+  return {
+    hour: d.getUTCHours(),
+    // O minuto só passou a importar quando o "bom dia" precisou sair ANTES de
+    // o grupo abrir. O resto da agenda é por hora cheia.
+    minute: d.getUTCMinutes(),
+    dateKey: d.toISOString().slice(0, 10),
+  };
 }
 
 /** Menor preço válido do produto (considera variantes). */
@@ -376,6 +382,121 @@ async function ajustarPortao(hour) {
   }
 }
 
+// ─── Boa noite e bom dia ─────────────────────────────────────────────
+//
+// O pedido foi "nunca pode ser um texto igual, cada dia diferente". Isso
+// descarta uma lista fixa: por maior que ela seja, ela repete, e o dia em que
+// repetir é o dia em que a mensagem deixa de parecer escrita para alguém.
+//
+// Então o texto é ESCRITO na hora pelo modelo barato. Duas chamadas por dia
+// custam frações de centavo, e é o único trabalho do bot que não tem pressa
+// nenhuma: se falhar, tem uma frase de reserva embaixo e ninguém percebe.
+//
+// O QUE ELE ESCREVE PASSA POR UMA PENEIRA antes de sair. É texto gerado indo
+// para um grupo com centenas de pessoas, sem ninguém ler antes — a mesma
+// situação que, no lado do fornecedor, a gente decidiu não permitir. Aqui é
+// aceitável porque o assunto é "bom dia": não tem preço, não tem promessa, não
+// tem dado de cliente. Mas as travas de vocabulário continuam valendo, e o
+// tamanho também.
+
+/** O que nunca pode sair, nem numa saudação. */
+function saudacaoAprovada(texto) {
+  const t = String(texto || '').trim();
+  if (t.length < 20 || t.length > 420) return null;
+
+  const politica = require('./ponte/politica');
+  if (politica.vocabularioProibido().test(t)) return null;
+  if (politica.temCJK(t)) return null;
+  // Link numa saudação é propaganda disfarçada, e a mensagem perde o que ela
+  // tem de melhor: não estar vendendo nada.
+  if (/https?:\/\//i.test(t)) return null;
+
+  return t;
+}
+
+/** As últimas saudações, para o modelo não repetir o que já foi. */
+function saudacoesRecentes() {
+  return Array.isArray(state.saudacoes) ? state.saudacoes : [];
+}
+
+function guardarSaudacao(texto) {
+  state.saudacoes = [...saudacoesRecentes(), texto].slice(-30);
+  saveState();
+}
+
+const RESERVA = {
+  noite: 'Boa noite a todos 🌙 Que a noite traga descanso de verdade, e que amanhã comece melhor do que hoje terminou.',
+  dia: 'Bom dia, pessoal ☀️ Que hoje seja um dia leve, com tempo para o que importa e paciência para o resto.',
+};
+
+/**
+ * Escreve a saudação do dia.
+ *
+ * O prompt pede o que o dono pediu: bonita, trabalhada, que respeite todo mundo
+ * e simbolize o bem. "Respeitar todo mundo" virou regra explícita de não citar
+ * religião, política nem time — num grupo de centenas de pessoas, o que para uma
+ * é acolhimento, para outra é o motivo de sair.
+ *
+ * As últimas trinta vão no prompt para ele não repetir. É a forma barata de
+ * cumprir "cada dia diferente" sem guardar lista nenhuma escrita à mão.
+ */
+async function escreverSaudacao(tipo) {
+  const recentes = saudacoesRecentes().slice(-30);
+  const regras =
+    `Escreva UMA mensagem de ${tipo === 'noite' ? 'BOA NOITE' : 'BOM DIA'} para o grupo de ` +
+    `clientes de uma loja de jogos, em portugues do Brasil.\n\n` +
+    `Como tem que ser:\n` +
+    `- Curta: 2 a 4 linhas, no maximo.\n` +
+    `- Calorosa e bem escrita, com uma imagem ou um pensamento proprio. Nada de frase de calendario.\n` +
+    `- Que respeite TODO MUNDO: nada de religiao, politica, time de futebol nem nada que divida.\n` +
+    `- Do bem, sem ser piegas. Fala de descanso, recomeco, gentileza, seguir em frente.\n` +
+    `- NAO venda nada, nao cite preco, produto, promocao nem link.\n` +
+    `- No maximo 2 emojis.\n` +
+    `- Nao escreva titulo, aspas nem explicacao. So a mensagem.\n\n` +
+    (recentes.length
+      ? `JA FORAM USADAS estas, e a sua precisa ser DIFERENTE em ideia e em palavras:\n` +
+        recentes.map((s) => `- ${s.replace(/\n/g, ' ').slice(0, 120)}`).join('\n')
+      : '');
+
+  const msg = await ai.chat([{ role: 'user', content: regras }], { maxTokens: 400, barato: true });
+  return saudacaoAprovada(msg?.content);
+}
+
+/**
+ * Manda a saudação do dia, se for a hora.
+ *
+ * `tipo` decide o texto; o horário quem decide é o chamador.
+ */
+async function saudar(tipo, dateKey) {
+  const slot = `saudacao-${tipo}-${dateKey}`;
+  if (state.slots[slot]) return; // já foi hoje
+
+  let texto = null;
+  try {
+    texto = await escreverSaudacao(tipo);
+  } catch (err) {
+    console.warn(`[community] saudacao de ${tipo} nao foi escrita: ${err.message}`);
+  }
+
+  // A reserva não é desistência: é a garantia de que o grupo nunca fica sem a
+  // mensagem por causa de um soluço do modelo. Ela repete, e tudo bem — repetir
+  // uma vez a cada muito tempo é diferente de repetir sempre.
+  if (!texto) texto = RESERVA[tipo];
+
+  // A BOA NOITE avisa quando o grupo volta, e essa linha é escrita por código.
+  // É informação, não poesia: quem tentar escrever meia-noite e não conseguir
+  // precisa saber que não está bloqueado, só é tarde.
+  const rodape =
+    tipo === 'noite' && cfg.portaoLigado
+      ? `\n\n_O grupo volta a abrir às ${cfg.abreHora}h._`
+      : '';
+
+  state.slots[slot] = Date.now();
+  guardarSaudacao(texto); // já salva o estado
+  await publish(texto + rodape);
+  console.log(`[community] saudacao de ${tipo} publicada`);
+}
+
 /** Para o #status: o grupo está fechado neste instante? */
 function grupoFechado() {
   if (!cfg.portaoLigado || !cfg.groupJid) return false;
@@ -392,6 +513,29 @@ async function tick() {
     // ANTES dos anúncios, de propósito: se o horário de abrir chegou, o grupo
     // abre nesta volta e o anúncio das 10h já cai num grupo aberto.
     await ajustarPortao(hour);
+
+    // ── As saudações ──────────────────────────────────────
+    //
+    // A BOA NOITE sai na hora de fechar, e vem DEPOIS do ajustarPortao acima:
+    // assim ela é a última mensagem do dia, e ninguém escreve por cima dela.
+    //
+    // O BOM DIA sai cinco minutos ANTES de abrir, com o grupo ainda fechado —
+    // por isso ele fica sozinho no topo quando as pessoas voltam, em vez de
+    // nascer no meio de uma conversa. Só o bot escreve num grupo fechado, e ele
+    // é admin (é o que faz o portão funcionar).
+    //
+    // A janela vai até a hora de abrir, e não só nos cinco minutos: um tick
+    // perdido não pode custar a saudação do dia. A trava de slot cuida do resto.
+    if (cfg.saudacoesLigadas && require('./chaves').ligada('grupo')) {
+      const minutoDeAbrir = cfg.abreHora * 60;
+      const agoraEmMinutos = hour * 60 + minute;
+      const janelaDoBomDia =
+        agoraEmMinutos >= minutoDeAbrir - cfg.antecedenciaBomDiaMin &&
+        agoraEmMinutos < minutoDeAbrir + 60;
+
+      if (hour === cfg.fechaHora) await saudar('noite', dateKey);
+      else if (janelaDoBomDia) await saudar('dia', dateKey);
+    }
     state.lastPostAt = state.lastPostAt || {};
     state.slots = state.slots || {};
 
@@ -484,4 +628,7 @@ function start() {
 
 function stop() { if (timer) { clearInterval(timer); timer = null; } }
 
-module.exports = { start, stop, tick, grupoFechado, deveEstarAberto, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
+// A peneira das saudações vai exportada para o teste: é ela que decide o que de
+// texto GERADO chega num grupo de centenas de pessoas sem ninguém ler antes.
+// Sem alcançá-la, o teste dublaria justamente o que deveria estar medindo.
+module.exports = { start, stop, tick, grupoFechado, deveEstarAberto, saudacaoAprovada, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };

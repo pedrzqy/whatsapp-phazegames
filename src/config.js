@@ -236,6 +236,18 @@ const config = {
     portaoLigado: process.env.COMMUNITY_PORTAO !== 'false',
     abreHora: Number(process.env.COMMUNITY_ABRE_HORA ?? 9),
     fechaHora: Number(process.env.COMMUNITY_FECHA_HORA ?? 23),
+
+    // Boa noite na hora de fechar, bom dia antes de abrir.
+    //
+    // O texto e escrito na hora pelo modelo barato, e nunca se repete -- as
+    // ultimas trinta vao no prompt para ele nao reaproveitar ideia nem palavra.
+    // Lista fixa foi descartada de proposito: por maior que seja ela repete, e
+    // o dia em que repetir e o dia em que a mensagem deixa de parecer escrita
+    // para alguem.
+    saudacoesLigadas: process.env.COMMUNITY_SAUDACOES !== 'false',
+    // Quantos minutos antes de abrir o bom dia sai. Com o grupo ainda fechado,
+    // ele fica sozinho no topo quando as pessoas voltam.
+    antecedenciaBomDiaMin: Number(process.env.COMMUNITY_BOM_DIA_ANTES_MIN ?? 5),
     // AGENDA por tipo de conteúdo: cada um tem sua CADÊNCIA (a cada N dias) e HORÁRIO (BRT).
     // Padrão: 1 review por dia (12h) e 1 notícia a cada 2 dias (19h). everyDays=0 desativa o tipo.
     // Cada entrada = 1 post, no seu HORÁRIO, a cada `everyDays` dias. Mesmo tipo pode

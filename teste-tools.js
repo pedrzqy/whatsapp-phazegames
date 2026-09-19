@@ -950,6 +950,30 @@ nerix.checkPayment = async (codigo) => {
   t('3h da manhã: fechado', comunidade.deveEstarAberto(3) === false);
   t('8h: ainda fechado', comunidade.deveEstarAberto(8) === false);
 
+  // ── A peneira das saudações ────────────────────────────────
+  //
+  // Boa noite e bom dia sao ESCRITOS pelo modelo, e vao para um grupo de
+  // centenas de pessoas sem ninguem ler antes. Isso e aceitavel porque o
+  // assunto nao tem preco, promessa nem dado de cliente -- mas as travas de
+  // vocabulario continuam valendo, e sao estas que as aplicam.
+  bloco('o que uma saudacao gerada pode conter');
+  const passa = (t) => Boolean(comunidade.saudacaoAprovada(t));
+
+  t('uma saudação normal passa',
+    passa('Boa noite a todos 🌙 Que a noite traga descanso, e que amanha comece leve.'));
+  t('curta demais não passa', !passa('boa noite'));
+  t('longa demais não passa', !passa('a'.repeat(500)));
+  // As mesmas palavras barradas do resto do sistema. Uma saudacao gerada e
+  // justamente onde o modelo escorregaria para "atendimento automatico".
+  t('vocabulário proibido não passa',
+    !passa('Bom dia! Nosso atendimento e automatico e responde rapido para voce.'));
+  t('caractere chinês não passa',
+    !passa('Boa noite pessoal, descansem bem e ate amanha 早上好 com carinho.'));
+  // Link numa saudacao e propaganda disfarcada, e ela perde o que tem de
+  // melhor: nao estar vendendo nada.
+  t('link não passa',
+    !passa('Bom dia! Aproveite: https://phazegames.com tem promocao hoje para todos.'));
+
   globalThis.fetch = fetchReal;
 
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));
