@@ -356,16 +356,36 @@ function deveEstarAberto(hour) {
  * Por isso também o estado só é gravado DEPOIS de a chamada dar certo: falhou,
  * ele continua diferente do desejado e a próxima volta tenta de novo.
  */
+/**
+ * De quanto em quanto tempo o estado é reaplicado mesmo parecendo certo.
+ *
+ * O `state.grupoAberto` é o que o bot ACHA que o grupo está, e achar não é
+ * saber: se um envio falhou, se alguém mexeu na chavinha pelo app, ou se o
+ * arquivo de estado voltou de um deploy, o que está gravado aqui e o que o
+ * WhatsApp mostra passam a ser coisas diferentes — e a comparação, que existe
+ * para evitar chamada à toa, vira o motivo de nada mais acontecer.
+ *
+ * Foi exatamente isso: o grupo fechou às 23h e não abriu às 9h, porque pelo
+ * registro ele já estava aberto.
+ *
+ * Reaplicar de hora em hora resolve sem depender de ninguém perceber. A chamada
+ * é idempotente (mandar "abrir" num grupo aberto não faz nada), então o custo
+ * de estar errado é uma requisição por hora.
+ */
+const REAPLICAR_MS = 60 * 60 * 1000;
+
 async function ajustarPortao(hour) {
   if (!cfg.portaoLigado) return;
   if (!require('./chaves').ligada('grupo')) return;
 
   const aberto = deveEstarAberto(hour);
-  if (state.grupoAberto === aberto) return; // já está como deveria
+  const faz = Date.now() - (state.portaoEm || 0);
+  if (state.grupoAberto === aberto && faz < REAPLICAR_MS) return; // certo e recente
 
   if (cfg.dryRun) {
     console.log(`[community] (DRY-RUN) o grupo ${aberto ? 'abriria' : 'fecharia'} agora`);
     state.grupoAberto = aberto;
+    state.portaoEm = Date.now();
     saveState();
     return;
   }
@@ -373,6 +393,7 @@ async function ajustarPortao(hour) {
   try {
     await evolution.portaoDoGrupo(cfg.groupJid, aberto, cfg.instance ? { instance: cfg.instance } : {});
     state.grupoAberto = aberto;
+    state.portaoEm = Date.now();
     saveState();
     console.log(`[community] grupo ${aberto ? 'ABERTO' : 'FECHADO'} (${cfg.abreHora}h as ${cfg.fechaHora}h)`);
   } catch (err) {
@@ -508,7 +529,17 @@ async function tick() {
   running = true;
   try {
     const now = Date.now();
-    const { hour, dateKey } = brt(now);
+    // `minute` faltava aqui, e o arquivo é 'use strict': a saudação lia uma
+    // variável que não existia e o tick inteiro morria com ReferenceError, todo
+    // ciclo, calado dentro do catch lá embaixo. O bom dia nunca teve chance.
+    const { hour, minute, dateKey } = brt(now);
+
+    // Estas duas linhas vinham DEPOIS das saudações, e `saudar` lê state.slots.
+    // Num estado recém-criado (deploy que apaga o arquivo) seria outro erro no
+    // mesmo lugar. Inicializar antes de qualquer coisa que use é mais barato
+    // que lembrar da ordem.
+    state.lastPostAt = state.lastPostAt || {};
+    state.slots = state.slots || {};
 
     // ANTES dos anúncios, de propósito: se o horário de abrir chegou, o grupo
     // abre nesta volta e o anúncio das 10h já cai num grupo aberto.
@@ -536,9 +567,6 @@ async function tick() {
       if (hour === cfg.fechaHora) await saudar('noite', dateKey);
       else if (janelaDoBomDia) await saudar('dia', dateKey);
     }
-    state.lastPostAt = state.lastPostAt || {};
-    state.slots = state.slots || {};
-
     // Poda slots antigos (mantém o estado enxuto).
     for (const k of Object.keys(state.slots)) {
       if (now - state.slots[k] > 15 * 24 * 60 * 60 * 1000) delete state.slots[k];
