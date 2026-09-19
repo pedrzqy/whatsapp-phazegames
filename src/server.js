@@ -306,7 +306,10 @@ app.post('/webhooks/nerix', async (req, res) => {
   // tem dado de cliente e isto vai parar numa mensagem de WhatsApp.
   vendas.registrarChamadaWebhook({
     evento: String(nomeDoEvento).slice(0, 40),
-    pedido: dadosDoEvento.order_number || dadosDoEvento.code || dadosDoEvento.id || null,
+    pedido: (() => {
+      const p = vendas.acharPedido(req.body);
+      return p ? p.order_number || p.code || p.id : null;
+    })(),
     campos: Object.keys(dadosDoEvento).join(',').slice(0, 200),
   });
 

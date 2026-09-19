@@ -177,6 +177,35 @@ const CLI = '5541999998888';
   t('estornado não vira pago',
     formatOrder({ order_number: 'x', status: 'pending', payment_status: 'refunded' }).pago === false);
 
+  // ── O pedido vem aninhado em data.order ────────────────────
+  //
+  // O #status entregou o diagnostico: "A loja mandou order.approved, SEM numero
+  // de pedido. Campos que vieram: order."
+  //
+  // A documentacao mostra `data.order_number` direto em `data`. O que chega de
+  // verdade e `data.order.order_number`, um nivel mais fundo -- e o carregar
+  // desistia antes de qualquer coisa. O painel da loja mostrava 200 Success, o
+  // #status dizia "nenhum aviso recebido", e as duas telas estavam certas: o
+  // 200 sai antes do processamento. Uma venda aprovada nao virou aviso nenhum.
+  bloco('pedido aninhado em data.order é encontrado');
+
+  enviadas = [];
+  pedidoFalso = pedido({ order_number: 'NX-2050' });
+  await vendas.onEvento({
+    event: 'order.approved',
+    data: { order: { order_number: 'NX-2050', status: 'pending', payment_status: 'paid' } },
+  });
+  t('o operador é avisado', enviadas.some((e) => e.para === OP),
+    JSON.stringify(enviadas.map((e) => e.para)));
+  t('  e o cliente também', enviadas.some((e) => e.para === CLI));
+
+  // A forma da documentacao continua valendo: ela pode voltar a ser a real num
+  // deploy deles, e o desfecho nao pode ser silencio de novo.
+  t('a forma da documentação continua funcionando',
+    vendas.acharPedido({ data: { order_number: 'NX-1054' } })?.order_number === 'NX-1054');
+  t('e corpo sem pedido nenhum devolve nada',
+    vendas.acharPedido({ event: 'ping', data: {} }) === null);
+
   bloco('venda aprovada avisa mesmo com nome de evento desconhecido');
 
   enviadas = [];

@@ -151,8 +151,39 @@ function paraWhatsApp(telefone) {
  * que QUEM PERGUNTA é o dono. Aqui quem pergunta é a loja, sobre um evento que
  * a própria loja emitiu.
  */
+/**
+ * Acha o pedido dentro do corpo do webhook, esteja ele onde estiver.
+ *
+ * A documentação da Nerix mostra `data.order_number` direto em `data`. O que
+ * chega de verdade é `data.order.order_number` — um nível mais fundo.
+ *
+ * E o efeito disso foi o silêncio mais caro desta semana: `carregar` procurava
+ * o código um nível acima, não achava, e desistia ANTES de qualquer coisa. O
+ * painel da loja mostrava "200 Success", o #status dizia "nenhum aviso
+ * recebido", e as duas telas estavam certas — o 200 sai antes do processamento.
+ * Uma venda aprovada de verdade não virou aviso nenhum.
+ *
+ * Por isso a busca é por LISTA de lugares plausíveis, e não por um caminho só:
+ * a forma do payload é decisão de outra empresa, pode mudar num deploy deles, e
+ * quando mudar o desfecho não pode ser silêncio de novo.
+ */
+function acharPedido(evento) {
+  const candidatos = [
+    evento?.data?.order,
+    evento?.data?.pedido,
+    evento?.data,
+    evento?.order,
+    evento,
+  ];
+  for (const c of candidatos) {
+    if (c && (c.order_number || c.code || c.id)) return c;
+  }
+  return null;
+}
+
 async function carregar(evento) {
-  const dataEvento = evento?.data || evento || {};
+  const dataEvento = acharPedido(evento);
+  if (!dataEvento) return null;
   const codigo = dataEvento.order_number || dataEvento.code || dataEvento.id;
   if (!codigo) return null;
 
@@ -745,6 +776,12 @@ module.exports = {
     persist();
   },
   ultimaChamadaWebhook: () => dados.ultimaChamadaWebhook || null,
+
+  // Exportada para o server.js escrever o diagnostico com o MESMO criterio que
+  // o processamento usa. Dois criterios diferentes fariam o #status dizer que
+  // achou o pedido enquanto o codigo desiste dele, que e pior que nao ter
+  // diagnostico nenhum.
+  acharPedido,
   carregar,
   avisarOperador,
   jaFeito,
