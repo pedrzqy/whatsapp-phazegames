@@ -78,7 +78,7 @@ const config = {
     // Por isso mora aqui e em nenhum outro lugar: dois links soltos pelo código
     // é um deles ficando velho, e o velho leva o cliente para um grupo morto
     // bem no momento em que ele foi conferir se dá para confiar.
-    groupUrl: process.env.STORE_GROUP_URL || 'https://chat.whatsapp.com/Il0t5LvgRCpEY8acgoefe5',
+    groupUrl: process.env.STORE_GROUP_URL || 'https://chat.whatsapp.com/EKh2ZiDH62L3tFJAmJgIxy',
     // Site onde o cliente resgata o código de verificação da conta (ao entrar).
     codeUrl: process.env.STORE_CODE_URL || 'https://codigons.online/',
     // Vídeo de como entrar na conta, baixar e jogar. SÓ NINTENDO.
