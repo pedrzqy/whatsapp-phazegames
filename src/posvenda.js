@@ -69,14 +69,6 @@ function textoDaConferencia(nome) {
  */
 async function conferirEntregas(agora = Date.now()) {
   if (!chaves.ligada('conferir')) return 0;
-  // "Deu certo a ativação?" é uma PERGUNTA, e pergunta com o atendimento
-  // desligado vira silêncio na resposta. Quem responde "não deu" e não ouve
-  // mais nada fica pior do que se ninguém tivesse perguntado.
-  if (!require('./ponte').atendimentoLigado()) return 0;
-  // "Deu certo a ativação?" e uma PERGUNTA, e pergunta com o atendimento
-  // desligado vira silencio na resposta. Quem responde "nao deu" e nao ouve
-  // mais nada fica pior do que se ninguem tivesse perguntado.
-  if (!require('./ponte').atendimentoLigado()) return 0;
   if (recovery.isQuietHour(agora)) return 0;
 
   const pedidos = vendas._dados().pedidos || {};
