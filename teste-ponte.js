@@ -369,6 +369,42 @@ t('  pedindo o login', /login\/usu/i.test(depoisDoMenu.mensagem || ''), depoisDo
 // primeira notícia da fila vinha depois de todo o trabalho feito. Aí esperava
 // calado — e com o timeout de 4 horas que a fila tinha, essa espera chegou a
 // uma hora sem nenhuma atualização.
+// ── "Só código": o que para e o que continua ───────────────
+//
+// O dono viu um lead de anúncio receber três telas de bot antes de qualquer
+// resposta, e pediu para desligar tudo menos o código. O interruptor já existia
+// (#admin 1), mas DOIS agendadores rodam por conta própria, longe do caminho da
+// mensagem, e continuariam falando com todo mundo.
+//
+// O pior deles é o convite: a cutucada chama a pessoa de volta, ela responde, e
+// o bot está mudo. Melhor não ter cutucado.
+bloco('atendimento desligado cala os agendadores, não o código');
+const chavesSoCodigo = require('./src/chaves');
+const ponteSoCodigo = require('./src/ponte');
+
+chavesSoCodigo.definir('atendimento', false);
+t('o atendimento fica desligado', ponteSoCodigo.atendimentoLigado() === false);
+
+// Lê o código-fonte de propósito, como o teste do `barato`. Um teste de
+// comportamento aqui exigiria dublar o relógio e o sender dos dois agendadores;
+// o que precisa ser garantido é mais simples e mais durável: que cada um deles
+// CONSULTE o interruptor antes de falar com alguém.
+for (const arq of ['src/recovery.js', 'src/posvenda.js']) {
+  const fonte = fsMod.readFileSync(arq, 'utf8');
+  t(`  ${arq} consulta o atendimento antes de cutucar`,
+    /atendimentoLigado\(\)/.test(fonte));
+}
+
+// E o que NÃO pode parar: o pedido de código é o único motivo de o bot existir
+// neste modo. Ele roda antes do interruptor, de propósito.
+delete estadoPonte.dados.pendentes;
+const soCodigo = recepcao.iniciarFluxo('5541900007070');
+t('o pedido de código continua de pé', soCodigo.acao === 'responder', soCodigo.acao);
+t('  pedindo a foto normalmente', /foto da tela do console/i.test(soCodigo.mensagem || ''));
+
+chavesSoCodigo.definir('atendimento', null);
+delete estadoPonte.dados.pendentes;
+
 bloco('recepção — fila ocupada avisa antes de pedir qualquer coisa');
 estadoPonte.dados.atendimentos.length = 0;
 delete estadoPonte.dados.pendentes;

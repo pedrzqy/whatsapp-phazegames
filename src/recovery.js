@@ -76,6 +76,28 @@ function tick() {
   try {
     const now = Date.now();
     if (isQuietHour(now)) return; // horário de silêncio: pula o tick inteiro
+
+    // ATENDIMENTO DESLIGADO: nada de cutucada.
+    //
+    // A cutucada convida a responder, e com o atendimento desligado o bot fica
+    // MUDO quando a pessoa responde. O desfecho é pior que não cutucar: ela
+    // volta por causa da nossa mensagem e encontra silêncio.
+    //
+    // Sem esta linha o "modo só código" não seria só código: este agendador
+    // roda por conta própria, longe do caminho da mensagem, e continuaria
+    // falando com todo mundo.
+    if (!require('./ponte').atendimentoLigado()) return;
+
+    // ATENDIMENTO DESLIGADO: nada de cutucada.
+    //
+    // A cutucada convida a responder, e com o atendimento desligado o bot fica
+    // MUDO quando a pessoa responde. O desfecho é pior que não cutucar: ela
+    // volta por causa da nossa mensagem e encontra silêncio.
+    //
+    // Isso ficou visível quando o dono desligou tudo menos o código. Com o
+    // scheduler em pé por conta própria, o "modo só código" não seria só
+    // código.
+    if (!require('./ponte').atendimentoLigado()) return;
     for (const [id, contact] of store.allContacts()) {
       try {
         maybeNudge(id, contact, now);

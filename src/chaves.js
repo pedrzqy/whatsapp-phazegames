@@ -57,7 +57,17 @@ const CATALOGO = [
     id: 'atendimento',
     curto: 'Responder cliente no WhatsApp',
     nome: 'Atendimento',
-    explica: 'Responder mensagem de cliente. Desligado, a mensagem chega e ninguém responde.',
+    // A segunda frase é a que decide se ele vai usar isto sem medo.
+    //
+    // Desligar isto é o "modo só código", e é a única coisa que ele queria
+    // quando achou que tinha perdido uma venda para três telas de bot. Mas o
+    // texto antigo dizia só "ninguém responde" — e quem lê aquilo conclui que o
+    // pedido de código para também, que é justamente o que não pode parar.
+    explica:
+      'Responder mensagem de cliente: saudação, menu e conversa livre. ' +
+      'Desligado, a mensagem chega e ninguém responde, e você atende na mão. ' +
+      'O pedido de CÓDIGO continua funcionando normalmente, e as cutucadas de ' +
+      'recuperação e pós-venda param junto.',
     padrao: () => config.autoReply,
     risco: 'medio',
   },
