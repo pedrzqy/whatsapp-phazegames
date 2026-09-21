@@ -422,7 +422,16 @@ async function entregarChaves(pedido) {
     linhas.push('O restante do pedido eu te mando em seguida 👍', '');
   }
 
-  linhas.push('_Qualquer coisa é só chamar aqui. Digite *#menu* para ver as opções._');
+  // O *#meulogin* vale mais que o menu nesta mensagem específica.
+  //
+  // Esta é a mensagem que EXPIRA: com o temporizador de mensagens temporárias
+  // ligado ela some dos dois lados em uma semana, e o cliente fica sem o
+  // acesso que pagou. Ele precisa saber como pedir de volta ANTES de ela
+  // sumir, e este é o único momento em que ele com certeza está lendo.
+  //
+  // O menu ainda por cima não existe com o atendimento desligado, e prometer
+  // opção que não vai aparecer é pior que não prometer nada.
+  linhas.push('_Guarda essa mensagem. Se sumir, é só digitar *#meulogin* aqui._');
 
   try {
     await sender.send(numero, linhas.join('\n'));

@@ -632,6 +632,76 @@ function webhookDe(numero, message, pushName = 'Cliente') {
   chaves.definir('atendimento', antesAtendimento);
   chaves.definir('codigos', antesCodigos);
 
+  // ── "PERDI MEU LOGIN" ──────────────────────────────────────
+  //
+  // A mensagem do WhatsApp expira e leva o acesso junto. O que a loja gravou
+  // no pedido não expira, e esta porta busca de lá. O bloco tranca as quatro
+  // decisões: a prova de dono é o número de quem fala, funciona com o
+  // atendimento desligado, não toma a conversa do operador, e o desfecho vazio
+  // avisa alguém em vez de sumir.
+  bloco('o cliente recupera o acesso que a loja entregou');
+
+  const COMPRA = '5541900005555';
+  const OPERADOR = process.env.PONTE_OPERADOR_NUMERO;
+  store.saveContact(COMPRA, { ...jaSaudado, menuNode: null, modoIA: false });
+
+  const listOrdersAntes = nerix.listOrders;
+  const PEDIDO_COM_ACESSO = {
+    id: 9001,
+    order_number: 'NX-9001',
+    customer_phone: COMPRA,
+    customer_name: 'Cliente',
+    status: 'delivered',
+    payment_status: 'paid',
+    total: '59.80',
+    created_at: '2026-09-01T10:00:00.000Z',
+    items: [{
+      id: 1, product_id: 12, name: 'Hollow Knight Silksong',
+      quantity: 1, price: '59.80', product_key: 'contajogo01 / senha4321',
+    }],
+  };
+  nerix.listOrders = async () => ({ data: [PEDIDO_COM_ACESSO] });
+
+  await entregar(webhookDe(COMPRA, { conversation: '#meulogin' }));
+  const acesso = enviadas.filter((e) => e.para === COMPRA).map((e) => e.texto).join('\n');
+  t('o acesso volta', /senha4321/.test(acesso), acesso.slice(0, 50) || '(silencio)');
+  t('  com o numero do pedido junto', /NX-9001/.test(acesso));
+  // Sem isto o cliente recupera uma vez e da proxima nao sabe como: a mensagem
+  // que ele acabou de receber e a unica aula que ele vai ter.
+  t('  e ensina a pedir de novo', /#meulogin/.test(acesso));
+
+  // O portao do atendimento nao pode calar isto, pelo mesmo motivo do #inicio.
+  chaves.definir('atendimento', false);
+  await entregar(webhookDe(COMPRA, { conversation: 'meulogin' }));
+  t('funciona com o atendimento desligado',
+    /senha4321/.test(enviadas.map((e) => e.texto).join('\n')), '(silencio)');
+  chaves.definir('atendimento', true);
+
+  // Devolver um dado que ja e do cliente nao e assumir a conversa.
+  store.saveContact(COMPRA, { paused: true });
+  await entregar(webhookDe(COMPRA, { conversation: '#acesso' }));
+  t('funciona com o operador no chat',
+    /senha4321/.test(enviadas.map((e) => e.texto).join('\n')), '(silencio)');
+  t('  e nao tira o operador da conversa', store.getContact(COMPRA)?.paused === true);
+  store.saveContact(COMPRA, { paused: false });
+
+  // O desfecho VAZIO e o mais provavel hoje: em produto de conta a Nerix
+  // devolve product_key vazio. Se ele sumir calado, perde-se cliente sem
+  // ninguem ficar sabendo.
+  nerix.listOrders = async () => ({ data: [] });
+  const SEM_COMPRA = '5541900006666';
+  store.saveContact(SEM_COMPRA, { ...jaSaudado, menuNode: null, modoIA: false });
+  await entregar(webhookDe(SEM_COMPRA, { conversation: '#meulogin' }));
+  const semNada = enviadas.filter((e) => e.para === SEM_COMPRA).map((e) => e.texto).join('\n');
+  t('sem acesso gravado, o cliente recebe resposta', semNada.length > 0, '(silencio)');
+  t('  e o operador e avisado',
+    enviadas.some((e) => e.para.includes(OPERADOR)),
+    enviadas.map((e) => e.para).join(' | ') || '(ninguem)');
+  t('  sem falar de erro tecnico', !/erro|falha|api|null|undefined/i.test(semNada),
+    semNada.slice(0, 60));
+
+  nerix.listOrders = listOrdersAntes;
+
   // ── Varredura: nada proibido saiu para o cliente ───────────
   //
   // O teste-ponte ja fazia isto, mas so nas mensagens do OPERADOR. As do

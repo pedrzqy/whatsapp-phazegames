@@ -326,6 +326,24 @@ const RESUME = new Set([
   'opcoes', 'opções', '#opcoes', '#opções',
 ]);
 
+// "PERDI MEU LOGIN" — as palavras que devolvem o acesso da compra.
+//
+// A loja é o único lugar onde o acesso dura: a mensagem do WhatsApp some com
+// o temporizador de mensagens temporárias, e o cliente fica sem nada. O que a
+// Nerix entregou no pedido continua lá para sempre, e esta porta busca de lá.
+//
+// Com e SEM "#", pelo mesmo motivo do RESUME: quem lê "digite #meulogin" no
+// rodapé digita "meulogin" na mesma medida.
+// "login" e "acesso" SOZINHOS ficaram de fora, e não por descuido: a recepção
+// do código pergunta "agora o *login/usuário* da conta", e cliente confuso
+// responde a pergunta com a palavra dela. Quem digitasse só "login" ali
+// receberia a compra antiga de volta em vez do passo seguinte. Com cerquilha
+// não há ambiguidade, e as outras três ninguém digita por acaso.
+const LOGIN = new Set([
+  '#meulogin', 'meulogin', '#meuacesso', 'meuacesso',
+  '#login', '#acesso', '#minhaconta', 'minhaconta',
+]);
+
 // Serializa o processamento das mensagens de um MESMO contato, para não
 // re-saudar nem trocar a ordem quando várias mensagens chegam em sequência.
 const contactLocks = new Map();
@@ -398,6 +416,25 @@ async function handleMessage(msg) {
   // `#inicio` e as outras palavras de recomeço passam direto: é a ÚNICA saída
   // que o cliente tem da pausa, e está escrita no aviso que ele recebe.
   // Interceptar aqui prenderia ele em silêncio para sempre.
+  // ── "PERDI MEU LOGIN" ───────────────────────────────────────
+  //
+  // Vem ANTES de tudo o que lê a mensagem por padrão — a pausa, a recepção do
+  // código, o portão do atendimento. Três motivos, e cada um já foi um bug
+  // aqui:
+  //
+  //  - com a chave 1 desligada, o portão lá embaixo retornaria calado;
+  //  - com o operador no chat, o bloco da pausa retornaria calado;
+  //  - a recepção do código reconhece "login/usuário" e assumiria o fluxo do
+  //    CÓDIGO, que é outra coisa.
+  //
+  // Comando explícito vence adivinhação. E devolver um dado que já é do
+  // cliente não toma a conversa de ninguém: aqui NÃO se pausa nem se despausa
+  // nada, quem está atendendo continua atendendo.
+  if (LOGIN.has(lower)) {
+    await mandarAcesso(from, pushName);
+    return;
+  }
+
   const pausadoAgora = store.getContact(from)?.paused && !RESUME.has(lower);
   if (pausadoAgora && ponte.ativa()) {
     const r = recepcao.avaliar(from, trimmed, imagem);
@@ -1000,6 +1037,77 @@ function respostaDePedido(r, { codigo }) {
 
   linhas.push('', '_Digite *#menu* para ver as opções._');
   return linhas.join('\n');
+}
+
+/**
+ * Devolve ao cliente o acesso que a LOJA entregou na compra dele.
+ *
+ * POR QUE EXISTE: a mensagem do WhatsApp expira. O temporizador de mensagens
+ * temporárias apaga dos DOIS lados, e quem comprou faz mais de uma semana fica
+ * sem o login sem ter feito nada errado. O que a loja gravou no pedido não
+ * expira, e é de lá que esta função busca.
+ *
+ * A PROVA de que o pedido é dele já está feita: `pedidosDoTelefone` procura
+ * pelo número de WhatsApp de quem está falando, que o próprio WhatsApp
+ * autentica. Nada é pedido ao cliente e nenhum pedido de outra pessoa é
+ * alcançável por aqui.
+ *
+ * QUANDO NÃO ACHA, o operador é avisado. Este é o desfecho mais provável hoje:
+ * em produto de CONTA a Nerix devolve `product_key` vazio (está escrito no
+ * entregarChaves do vendas.js), então só aparece aqui o que a loja entregou
+ * pelo estoque dela. Sem o aviso, o cliente pediria, não receberia nada, e
+ * ninguém ficaria sabendo — que é como se perde cliente em silêncio.
+ */
+async function mandarAcesso(from, pushName) {
+  store.saveContact(from, { lastSeen: Date.now(), name: pushName || store.getContact(from)?.name });
+
+  let pedidos = [];
+  try {
+    pedidos = await vendas.pedidosDoTelefone(from);
+  } catch (err) {
+    // Busca fora do ar tem o MESMO desfecho de não achar: mesma frase para o
+    // cliente, mesmo aviso para o operador. Um segundo texto para alguém que
+    // não pode fazer nada a respeito seria só mais um texto para manter.
+    console.warn('[acesso] busca por telefone falhou:', err.message);
+  }
+
+  const blocos = [];
+  let quantos = 0;
+  for (const p of pedidos.slice(0, 5)) {
+    const r = tools.formatOrder(p);
+    const comChave = (r.itens || []).filter((i) => i.chave);
+    if (!comChave.length) continue;
+    quantos += comChave.length;
+    blocos.push(
+      [`📦 *Pedido ${r.codigo}*`, ...comChave.map((i) => `*${i.nome}*\n\`${i.chave}\``)].join('\n'),
+    );
+  }
+
+  if (blocos.length) {
+    await sender.send(
+      from,
+      `🔑 *Seu acesso*\n\n${blocos.join('\n\n')}\n\n` +
+        '_Guarda essa mensagem. Se sumir de novo, é só digitar *#meulogin* aqui._',
+    );
+    console.log(`[acesso] ${from} recuperou ${quantos} acesso(s) em ${blocos.length} pedido(s)`);
+    return;
+  }
+
+  const nome = store.getContact(from)?.name || pushName || 'cliente';
+  await ponte.alertar(
+    `Cliente: *${nome}* · ${from.replace(/@.*/, '')}\n` +
+      '🔑 Pediu o acesso de volta e a loja não tem nada gravado ' +
+      `(${pedidos.length} pedido(s) neste número).`,
+  );
+  console.log(`[acesso] ${from} pediu o acesso e nao achei nada (${pedidos.length} pedido(s))`);
+
+  // A promessa vem do expediente, como em toda outra porta: às 3h da manhã
+  // "já estamos vendo" é mentira, e promessa quebrada custa mais que demora
+  // avisada.
+  await sender.send(
+    from,
+    `Não achei o acesso guardado na sua compra 🙏 ${expediente.promessaDeAtendimento()}`,
+  );
 }
 
 /**
