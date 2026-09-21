@@ -6,7 +6,9 @@ Copie este arquivo inteiro na primeira mensagem da próxima janela.
 
 Você vai trabalhar no bot de WhatsApp da **Phaze Games**, loja brasileira de
 jogos digitais. O código está em `C:\Users\pedrz\Downloads\EvolutionAPI`,
-branch `main`, remoto `github.com/pedrzqy/whatsbot`.
+branch `main`. O repositório foi renomeado para
+`github.com/pedrzqy/whatsapp-phazegames`; o remoto local ainda aponta para o
+nome antigo (`whatsbot`) e o GitHub redireciona, então o push funciona.
 
 Fale **português**. O dono não é programador.
 
