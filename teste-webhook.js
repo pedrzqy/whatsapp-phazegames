@@ -175,6 +175,31 @@ function webhookDe(numero, message, pushName = 'Cliente') {
   const jaOk = await fetch(`${base}/conectar?token=token-de-teste`);
   t('conectado nao gera codigo novo', pediuCodigo === false && /Ja esta conectado/.test(await jaOk.text()));
 
+  // ── MODO SO CODIGO ─────────────────────────────────────────
+  //
+  // Com o atendimento desligado o bot fica mudo, e e isso que foi pedido. Mas o
+  // #inicio ficava mudo JUNTO -- e ele e o caminho que o cliente conhece, porque
+  // esta escrito no rodape de toda mensagem que ele ja recebeu daqui.
+  //
+  // O resultado era o oposto do combinado: nem atendimento, nem codigo. Quem
+  // digitava #inicio para pedir o codigo falava com uma parede.
+  bloco('atendimento desligado: #inicio ainda abre o codigo');
+
+  const SO_CODIGO = '5541900003333';
+  chaves.definir('atendimento', false);
+
+  await entregar(webhookDe(SO_CODIGO, { conversation: 'quanto custa o gta 6?' }));
+  t('pergunta comum fica no silencio', enviadas.length === 0,
+    JSON.stringify(enviadas.map((e) => e.texto?.slice(0, 30))));
+
+  await entregar(webhookDe(SO_CODIGO, { conversation: '#inicio' }));
+  const pelaPorta = enviadas.filter((e) => e.para === SO_CODIGO).map((e) => e.texto).join(' | ');
+  t('#inicio abre o passo a passo do codigo',
+    /foto da tela do console/i.test(pelaPorta), pelaPorta.slice(0, 70) || '(nada)');
+  t('  e NAO manda o menu de oito opcoes', !/\*1\.\* /.test(pelaPorta));
+
+  chaves.definir('atendimento', null);
+
   // ── GRUPO: O BOT NÃO RESPONDE. NUNCA. ──────────────────────
   //
   // As únicas mensagens que saem para o grupo são os anúncios que o

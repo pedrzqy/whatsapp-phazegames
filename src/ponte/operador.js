@@ -218,6 +218,20 @@ async function executar(texto, de = '') {
       '🧪 *Modo teste ligado por 30 min.*\n\n' +
       'Agora suas mensagens normais entram como se fossem de um cliente. ' +
       'Manda *preciso do código* e segue o passo a passo.\n\n' +
+      // COM O ATENDIMENTO DESLIGADO, "como se fossem de um cliente" vira mentira.
+      //
+      // O #teste fura o interruptor de propósito: é o único jeito de conferir o
+      // fluxo sem ligar o bot para a loja inteira. Mas quem acabou de desligar
+      // o atendimento e manda "oi" aqui recebe saudação, menu e resposta da IA
+      // — e conclui que o desligamento não pegou.
+      //
+      // Aconteceu exatamente isso. O aviso custa duas linhas e evita desfazer
+      // uma decisão certa por causa de um teste que mediu outra coisa.
+      (!ponte.atendimentoLigado()
+        ? '⚠️ O *atendimento está desligado*. Estas respostas chegam só no SEU ' +
+          'número, porque o teste fura o interruptor. Um cliente de verdade ' +
+          'recebe silêncio agora.\n\n'
+        : '') +
       (estavaPausado
         ? '_Seu número estava em atendimento humano e voltou a ser respondido._\n\n'
         : '') +

@@ -490,6 +490,26 @@ async function handleMessage(msg) {
       engaged: true,
       followupCount: 0,
     });
+
+    // MODO SÓ CÓDIGO: o #inicio continua sendo a porta.
+    //
+    // Desligar o atendimento deixa o bot mudo, e é isso que foi pedido. Só que
+    // o #inicio ficava mudo JUNTO — e ele é o caminho que o cliente conhece,
+    // porque está escrito no rodapé de toda mensagem que ele já recebeu daqui.
+    //
+    // O resultado era o oposto do combinado: nem atendimento, nem código. Quem
+    // digitava #inicio para pedir o código falava com uma parede, e do lado de
+    // lá o bot simplesmente quebrou.
+    //
+    // Aqui o #inicio deixa de abrir o menu de oito opções e passa a abrir
+    // direto o passo a passo do código, que é a única coisa que este modo faz.
+    // Qualquer outra mensagem continua no silêncio.
+    if (ponte.ativa() && RESUME.has(lower)) {
+      const inicio = recepcao.iniciarFluxo(from);
+      if (inicio.acao === 'responder') {
+        await sender.send(from, inicio.mensagem, exemplo.opcoes(inicio.exemplo));
+      }
+    }
     return;
   }
 
