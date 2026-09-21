@@ -490,6 +490,36 @@ async function handleMessage(msg) {
       engaged: true,
       followupCount: 0,
     });
+
+    // MODO SÓ CÓDIGO: `#inicio` continua valendo com o atendimento desligado.
+    //
+    // Este `return` calava o #inicio junto com o resto, e isso já custou uma
+    // rodada inteira (20/09, revertida no mesmo dia). O motivo é a ORDEM deste
+    // arquivo: as palavras de recomeço são tratadas lá embaixo, DEPOIS deste
+    // portão, então com a chave 1 desligada elas nunca eram alcançadas.
+    //
+    // E #inicio não é um comando qualquer — é o que está escrito no rodapé de
+    // toda mensagem que o bot já mandou, logo é o que o cliente vai digitar
+    // quando quiser alguma coisa. Deixá-lo mudo é deixar a loja muda.
+    //
+    // Aqui ele abre DIRETO o pedido de código, sem menu e sem IA: com o
+    // atendimento desligado, buscar código é a única coisa que o bot ainda
+    // faz, e mandar um menu de oito itens para depois só oferecer uma delas
+    // seria fazer o cliente escolher no escuro.
+    //
+    // Com a chave 4 desligada também, não há o que oferecer e o silêncio volta
+    // a ser a resposta certa — mensagem sobre um serviço parado não ajuda
+    // ninguém e ainda promete o que não vai acontecer.
+    if (RESUME.has(lower) && ponte.ativa()) {
+      // `paused: false` pelo mesmo motivo do bloco de recomeço lá embaixo: sem
+      // isto a FOTO seguinte bate no `pausadoAgora` e vira só um alerta para o
+      // operador, e o cliente fica preso no passo 1 sem entender por quê.
+      store.saveContact(from, { paused: false, menuNode: null, modoIA: false });
+      const inicio = recepcao.iniciarFluxo(from);
+      if (inicio.acao === 'responder') {
+        await sender.send(from, inicio.mensagem, exemplo.opcoes(inicio.exemplo));
+      }
+    }
     return;
   }
 

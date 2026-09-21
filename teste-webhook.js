@@ -573,6 +573,65 @@ function webhookDe(numero, message, pushName = 'Cliente') {
   evolutionEco.sendPresence = sendPresenceAntes;
   senderEco.send = sendEcoAntes;
 
+  // ── SÓ CÓDIGO: atendimento desligado não pode calar o #inicio ──
+  //
+  // Esta é a regressão de 20/09, revertida no mesmo dia. Em handlers.js o
+  // portão do atendimento roda ANTES das palavras de recomeço, então desligar
+  // a chave 1 fazia o `#inicio` retornar calado. E `#inicio` é o caminho que
+  // todo cliente conhece: está no rodapé de toda mensagem que o bot manda.
+  // O desfecho foi o pior dos dois mundos — nem atendimento, nem código.
+  //
+  // Não havia teste nenhum com o atendimento DESLIGADO, e é por isso que ela
+  // passou. O bloco tranca os dois lados: conversa normal continua muda, e
+  // `#inicio` abre o pedido de código e segue até a foto.
+  bloco('atendimento desligado: o #inicio ainda abre o pedido de codigo');
+
+  const SO_CODIGO = '5541900003333';
+  const antesAtendimento = chaves.ligada('atendimento');
+  const antesCodigos = chaves.ligada('codigos');
+  store.saveContact(SO_CODIGO, { ...jaSaudado, menuNode: null, modoIA: false });
+  chaves.definir('atendimento', false);
+  chaves.definir('codigos', true);
+
+  await entregar(webhookDe(SO_CODIGO, { conversation: 'oi, tudo bem?' }));
+  t('conversa normal continua muda', enviadas.length === 0,
+    enviadas.map((e) => e.texto.slice(0, 40)).join(' | '));
+  // O engajado é o que mantém a recuperação de venda funcionando com o
+  // atendimento desligado: sem esta marca, ninguém entra no ciclo de cutucada.
+  t('  mas o contato entra na recuperacao de venda',
+    store.getContact(SO_CODIGO)?.engaged === true);
+
+  await entregar(webhookDe(SO_CODIGO, { conversation: '#inicio' }));
+  const abertura = enviadas.map((e) => e.texto).join('\n');
+  t('#inicio responde', enviadas.length > 0, abertura || '(silencio)');
+  t('  e o que sai e o passo 1 do codigo', /2 coisas/.test(abertura),
+    abertura.slice(0, 60) || '(nada)');
+  // Nada de menu de oito itens junto. Não dá para procurar por "1️⃣": o passo 1
+  // do próprio fluxo do código usa esse número. O que identifica o MENU é o
+  // convite a escolher e as opções que só existem nele.
+  t('  sem o menu de opcoes junto',
+    !/responda com o \*n[uú]mero|Falar com um atendente/i.test(abertura),
+    abertura.slice(0, 60));
+
+  // O passo da foto, de ponta a ponta: sem ele o `#inicio` responderia uma vez
+  // e o cliente ficaria preso no passo 1 para sempre.
+  await entregar(webhookDe(SO_CODIGO, { imageMessage: {} }));
+  const depoisDaFoto = enviadas.map((e) => e.texto).join('\n');
+  t('a foto e aceita e o fluxo continua', /login|usu[aá]rio/i.test(depoisDaFoto),
+    depoisDaFoto.slice(0, 60) || '(silencio)');
+
+  // Com a busca de código TAMBÉM desligada não há o que oferecer: o silêncio
+  // volta a ser a resposta certa, e não uma mensagem sobre um serviço parado.
+  chaves.definir('codigos', false);
+  const OUTRO = '5541900003334';
+  store.saveContact(OUTRO, { ...jaSaudado, menuNode: null, modoIA: false });
+  await entregar(webhookDe(OUTRO, { conversation: '#inicio' }));
+  t('com os codigos desligados tambem, o #inicio volta a calar',
+    enviadas.length === 0, enviadas.map((e) => e.texto.slice(0, 40)).join(' | '));
+
+  chaves.definir('atendimento', antesAtendimento);
+  chaves.definir('codigos', antesCodigos);
+
   // ── Varredura: nada proibido saiu para o cliente ───────────
   //
   // O teste-ponte ja fazia isto, mas so nas mensagens do OPERADOR. As do
