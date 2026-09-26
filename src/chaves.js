@@ -57,7 +57,10 @@ const CATALOGO = [
     id: 'atendimento',
     curto: 'Responder cliente no WhatsApp',
     nome: 'Atendimento',
-    explica: 'Responder mensagem de cliente. Desligado, a mensagem chega e ninguém responde.',
+    explica:
+      'Responder mensagem de cliente. Desligado, é só código: nada automático sai — ' +
+      'nem menu, nem IA, nem cutucada, nem pergunta de pós-venda. A mensagem chega e ' +
+      'ninguém responde, exceto o pedido de código (#inicio) e o #meulogin.',
     padrao: () => config.autoReply,
     risco: 'medio',
   },

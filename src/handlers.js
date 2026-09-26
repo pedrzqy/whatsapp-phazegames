@@ -501,9 +501,17 @@ async function handleMessage(msg) {
     }
   }
 
-  // Auto-resposta DESLIGADA (BOT_AUTOREPLY=false): o bot não RESPONDE no 1-a-1
-  // (um humano atende). Mas marca o contato como engajado, pra a RECUPERAÇÃO DE
-  // VENDA ainda cutucar quem mandou mensagem e sumiu. Não envia nada agora.
+  // Atendimento DESLIGADO (#admin 1 / #atender off): o bot não RESPONDE no
+  // 1-a-1 (um humano atende, ou é modo só código). Não envia nada agora e NÃO
+  // marca o contato como engajado.
+  //
+  // Isto marcava `engaged:true` para a RECUPERAÇÃO DE VENDA cutucar mesmo com
+  // o atendimento desligado — e agora é o contrário do que se quer: desligado
+  // é "só código", e a cutucada é justamente uma mensagem automática. Manter a
+  // marca aqui também criava uma bomba-relógio: o cliente escrevia, o relógio
+  // do silêncio corria por baixo enquanto o atendimento seguia desligado, e no
+  // primeiro tick depois de religar (#admin 1 on) ele recebia uma cutucada por
+  // um tempo que passou todo com o atendimento fora do ar.
   //
   // EXCEÇÃO: o operador com #teste ligado.
   //
@@ -524,8 +532,6 @@ async function handleMessage(msg) {
     store.saveContact(from, {
       lastSeen: Date.now(),
       name: pushName || store.getContact(from)?.name,
-      engaged: true,
-      followupCount: 0,
     });
 
     // MODO SÓ CÓDIGO: `#inicio` continua valendo com o atendimento desligado.

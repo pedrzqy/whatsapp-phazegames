@@ -596,10 +596,12 @@ function webhookDe(numero, message, pushName = 'Cliente') {
   await entregar(webhookDe(SO_CODIGO, { conversation: 'oi, tudo bem?' }));
   t('conversa normal continua muda', enviadas.length === 0,
     enviadas.map((e) => e.texto.slice(0, 40)).join(' | '));
-  // O engajado é o que mantém a recuperação de venda funcionando com o
-  // atendimento desligado: sem esta marca, ninguém entra no ciclo de cutucada.
-  t('  mas o contato entra na recuperacao de venda',
-    store.getContact(SO_CODIGO)?.engaged === true);
+  // Atendimento desligado é "só código": nenhuma mensagem automática pode sair
+  // depois, nem a cutucada da recuperação de venda. Por isso o contato NÃO
+  // entra engajado — se entrasse, religar o atendimento mais tarde acordaria
+  // uma cutucada pelo tempo todo em que ele ficou desligado.
+  t('  e o contato NAO entra na recuperacao de venda',
+    store.getContact(SO_CODIGO)?.engaged !== true);
 
   await entregar(webhookDe(SO_CODIGO, { conversation: '#inicio' }));
   const abertura = enviadas.map((e) => e.texto).join('\n');

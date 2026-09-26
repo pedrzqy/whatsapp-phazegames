@@ -68,6 +68,11 @@ function textoDaConferencia(nome) {
  * @returns {Promise<number>} quantos foram perguntados
  */
 async function conferirEntregas(agora = Date.now()) {
+  // Atendimento desligado é "só código": nada automático sai para o cliente
+  // além do fluxo do código, e esta pergunta de pós-venda é justamente uma
+  // mensagem automática. Some ANTES do #admin 7 de propósito: religar o
+  // atendimento não pode acordar uma fila de perguntas atrasadas.
+  if (!chaves.ligada('atendimento')) return 0;
   if (!chaves.ligada('conferir')) return 0;
   if (recovery.isQuietHour(agora)) return 0;
 
@@ -139,6 +144,9 @@ async function conferirEntregas(agora = Date.now()) {
  */
 async function reativar(agora = Date.now()) {
   const cfg = config.posvenda;
+  // Mesma trava da conferência: atendimento desligado é "só código", e chamar
+  // quem sumiu é a mensagem automática mais arriscada das duas.
+  if (!chaves.ligada('atendimento')) return 0;
   if (!chaves.ligada('reativar')) return 0;
   if (recovery.isQuietHour(agora)) return 0;
 

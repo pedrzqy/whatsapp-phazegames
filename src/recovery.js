@@ -18,6 +18,7 @@ const config = require('./config');
 const store = require('./store');
 const sender = require('./sender');
 const variator = require('./variator');
+const chaves = require('./chaves');
 
 let timer = null;
 let running = false;
@@ -74,6 +75,11 @@ function tick() {
   if (running) return; // evita sobreposição de ticks
   running = true;
   try {
+    // Atendimento desligado é "só código": nenhuma mensagem automática sai
+    // para o cliente além do fluxo do código, e a cutucada é exatamente isso.
+    // Some ANTES do RECOVERY_ENABLED de propósito — religar o atendimento não
+    // pode acordar uma cutucada atrasada de quem ficou parado enquanto isso.
+    if (!chaves.ligada('atendimento')) return;
     const now = Date.now();
     if (isQuietHour(now)) return; // horário de silêncio: pula o tick inteiro
     for (const [id, contact] of store.allContacts()) {

@@ -176,6 +176,16 @@ que entrar **lá também**, senão ele é tratado como mensagem de cliente.
 
 **Chave nova entra no FIM.** Nunca no meio: ele decora a posição, não o nome.
 
+**Desligar a 1 (atendimento) agora é "só código" de verdade (25/09).** Antes,
+`#admin 1 off` calava o menu e a IA mas deixava a cutucada do `recovery.js` e o
+"conseguiu ativar?" do `posvenda.js` (7 e 8) rodando por conta própria — cada
+um só olhava o próprio interruptor. Perdeu venda com mensagem automática, então
+os dois agora também checam `chaves.ligada('atendimento')` antes de mandar
+qualquer coisa, e o handler para de marcar `engaged:true` enquanto está
+desligado (sem isso, religar acordava uma cutucada pelo tempo todo que ficou
+desligado). Ligar a 1 de volta religa tudo junto, do jeito de sempre — nada
+ficou travado no código, é só o mesmo interruptor valendo em mais lugares.
+
 ---
 
 ## 6 · Mapa dos arquivos
