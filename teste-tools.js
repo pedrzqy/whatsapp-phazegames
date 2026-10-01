@@ -989,6 +989,46 @@ nerix.checkPayment = async (codigo) => {
   t('erro do WhatsApp vira motivo, não exceção', deuRuim.ok === false && /403|permissao/.test(deuRuim.erro || ''),
     deuRuim.erro);
 
+  // ── O portão só muda ao cruzar o horário ───────────────────
+  //
+  // O grupo chegou a ficar cheio de "Você mudou as configurações do grupo...":
+  // o agendador reaplicava o estado de hora em hora e a cada tick com falha.
+  // Aqui o relógio é adiantado 1h para sair da trava da abertura na mão acima.
+  bloco('portao: uma mudanca por janela, sem repeticao');
+  const cfgCom = require('./src/config').community;
+  const chavesMod = require('./src/chaves');
+  const salvo = { dry: cfgCom.dryRun, lig: cfgCom.portaoLigado, ligada: chavesMod.ligada, now: Date.now };
+  cfgCom.dryRun = false; cfgCom.portaoLigado = true;
+  chavesMod.ligada = () => true;
+  let relogio = Date.now() + 60 * 60 * 1000;
+  Date.now = () => relogio;
+  let chamadasPortao = [];
+  evolucao.portaoDoGrupo = async (jid, aberto) => { chamadasPortao.push(aberto); return {}; };
+
+  await comunidade.ajustarPortao(12); // grupo estava fechado (mão): cruza para aberto
+  t('cruzou a fronteira: exatamente uma chamada', chamadasPortao.length === 1 && chamadasPortao[0] === true, JSON.stringify(chamadasPortao));
+  for (let i = 0; i < 20; i++) { relogio += 5 * 60 * 1000; await comunidade.ajustarPortao(12 + (i > 8 ? 1 : 0)); }
+  t('20 voltas na mesma janela: zero chamadas a mais', chamadasPortao.length === 1, JSON.stringify(chamadasPortao));
+  relogio += 3 * 60 * 60 * 1000;
+  await comunidade.ajustarPortao(23);
+  t('fechou na hora de fechar: mais uma, e só uma', chamadasPortao.length === 2 && chamadasPortao[1] === false, JSON.stringify(chamadasPortao));
+  for (let i = 0; i < 20; i++) { relogio += 5 * 60 * 1000; await comunidade.ajustarPortao(i % 2 ? 3 : 0); }
+  t('madrugada inteira: nada de novo', chamadasPortao.length === 2, JSON.stringify(chamadasPortao));
+
+  // Erro da API: uma tentativa e recuo, nao uma a cada volta.
+  chamadasPortao = [];
+  evolucao.portaoDoGrupo = async () => { chamadasPortao.push('x'); throw new Error('boom'); };
+  relogio += 60 * 60 * 1000;
+  await comunidade.ajustarPortao(10);
+  for (let i = 0; i < 4; i++) { relogio += 5 * 60 * 1000; await comunidade.ajustarPortao(10); }
+  t('erro: uma tentativa e depois recuo, sem laço apertado', chamadasPortao.length === 1, JSON.stringify(chamadasPortao));
+  relogio += 31 * 60 * 1000;
+  await comunidade.ajustarPortao(10);
+  t('passado o recuo, tenta de novo (uma vez)', chamadasPortao.length === 2, JSON.stringify(chamadasPortao));
+
+  Date.now = salvo.now; chavesMod.ligada = salvo.ligada;
+  cfgCom.dryRun = salvo.dry; cfgCom.portaoLigado = salvo.lig;
+
   evolucao.portaoDoGrupo = portaoReal;
 
   // ── A peneira das saudações ────────────────────────────────

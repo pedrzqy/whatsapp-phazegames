@@ -353,32 +353,23 @@ function deveEstarAberto(hour) {
 /**
  * Deixa o portão do grupo no estado que o relógio pede.
  *
- * RECONCILIAÇÃO, e não "às 23h feche". A diferença é o que acontece quando o
- * bot não está de pé na hora exata: com evento, o horário passa e o grupo fica
- * do jeito errado até o dia seguinte — trancado a noite toda e a manhã inteira,
- * e você só descobre por reclamação. Comparando o estado a cada volta, o
- * primeiro tick depois de qualquer queda conserta sozinho.
+ * Só age quando o estado GRAVADO difere do desejado, ou seja, uma vez ao
+ * cruzar a fronteira do horário (abre às COMMUNITY_ABRE_HORA, fecha às
+ * COMMUNITY_FECHA_HORA). Se o bot estava fora do ar na hora exata, o primeiro
+ * tick depois da volta conserta sozinho, e depois cala.
  *
- * Por isso também o estado só é gravado DEPOIS de a chamada dar certo: falhou,
- * ele continua diferente do desejado e a próxima volta tenta de novo.
+ * Havia aqui uma reaplicação de hora em hora "por garantia". Cada chamada,
+ * mesmo idempotente, faz o WhatsApp escrever no grupo "Você mudou as
+ * configurações do grupo para permitir que todos os membros enviem mensagens":
+ * o grupo ficava cheio dessa linha o dia inteiro. A reaplicação saiu. Se
+ * alguém mexer na chavinha pelo app, o horário não briga com a pessoa; o
+ * próximo cruzamento de fronteira acerta de novo.
+ *
+ * FALHA não é tentada a cada volta (5 min): espera um recuo crescente
+ * (30 min, 1h, 1h30... até 4h), gravado no estado, que sobrevive a reinício.
  */
-/**
- * De quanto em quanto tempo o estado é reaplicado mesmo parecendo certo.
- *
- * O `state.grupoAberto` é o que o bot ACHA que o grupo está, e achar não é
- * saber: se um envio falhou, se alguém mexeu na chavinha pelo app, ou se o
- * arquivo de estado voltou de um deploy, o que está gravado aqui e o que o
- * WhatsApp mostra passam a ser coisas diferentes — e a comparação, que existe
- * para evitar chamada à toa, vira o motivo de nada mais acontecer.
- *
- * Foi exatamente isso: o grupo fechou às 23h e não abriu às 9h, porque pelo
- * registro ele já estava aberto.
- *
- * Reaplicar de hora em hora resolve sem depender de ninguém perceber. A chamada
- * é idempotente (mandar "abrir" num grupo aberto não faz nada), então o custo
- * de estar errado é uma requisição por hora.
- */
-const REAPLICAR_MS = 60 * 60 * 1000;
+const RECUO_BASE_MS = 30 * 60 * 1000;
+const RECUO_MAX_MS = 4 * 60 * 60 * 1000;
 
 /**
  * Quanto tempo uma abertura/fechamento na mão segura o agendador.
@@ -400,8 +391,10 @@ async function ajustarPortao(hour) {
   if (Date.now() < (state.portaoManualAte || 0)) return;
 
   const aberto = deveEstarAberto(hour);
-  const faz = Date.now() - (state.portaoEm || 0);
-  if (state.grupoAberto === aberto && faz < REAPLICAR_MS) return; // certo e recente
+  if (state.grupoAberto === aberto) return; // já está assim: não mexe, não gera aviso
+
+  // Falhou há pouco: espera o recuo em vez de tentar a cada volta.
+  if (Date.now() < (state.portaoTentaApos || 0)) return;
 
   if (cfg.dryRun) {
     console.log(`[community] (DRY-RUN) o grupo ${aberto ? 'abriria' : 'fecharia'} agora`);
@@ -415,12 +408,18 @@ async function ajustarPortao(hour) {
     await evolution.portaoDoGrupo(cfg.groupJid, aberto, cfg.instance ? { instance: cfg.instance } : {});
     state.grupoAberto = aberto;
     state.portaoEm = Date.now();
+    state.portaoFalhas = 0;
+    state.portaoTentaApos = 0;
     saveState();
     console.log(`[community] grupo ${aberto ? 'ABERTO' : 'FECHADO'} (${cfg.abreHora}h as ${cfg.fechaHora}h)`);
   } catch (err) {
     // Não propaga: o portão não pode derrubar os anúncios, que são a razão de
     // este agendador existir. O motivo já foi para o log no evolution.js.
-    console.warn('[community] portao do grupo nao mudou agora, tento na proxima volta');
+    state.portaoFalhas = (state.portaoFalhas || 0) + 1;
+    const recuo = Math.min(RECUO_BASE_MS * state.portaoFalhas, RECUO_MAX_MS);
+    state.portaoTentaApos = Date.now() + recuo;
+    saveState();
+    console.warn(`[community] portao do grupo nao mudou, nova tentativa em ${Math.round(recuo / 60000)} min`);
   }
 }
 
@@ -557,6 +556,8 @@ async function mexerNoPortao(aberto) {
     state.grupoAberto = aberto;
     state.portaoEm = Date.now();
     state.portaoManualAte = Date.now() + MANUAL_MS;
+    state.portaoFalhas = 0;
+    state.portaoTentaApos = 0;
     saveState();
     console.log(`[community] grupo ${aberto ? 'ABERTO' : 'FECHADO'} na mao (automatico volta em 30 min)`);
     return { ok: true };
@@ -726,4 +727,4 @@ function stop() { if (timer) { clearInterval(timer); timer = null; } }
 // A peneira das saudações vai exportada para o teste: é ela que decide o que de
 // texto GERADO chega num grupo de centenas de pessoas sem ninguém ler antes.
 // Sem alcançá-la, o teste dublaria justamente o que deveria estar medindo.
-module.exports = { start, stop, tick, grupoFechado, deveEstarAberto, saudacaoAprovada, mexerNoPortao, estadoDoPortao, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
+module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, saudacaoAprovada, mexerNoPortao, estadoDoPortao, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
