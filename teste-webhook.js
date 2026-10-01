@@ -566,7 +566,7 @@ function webhookDe(numero, message, pushName = 'Cliente') {
   senderEco.send = sendReal;
 
   t('mas gente digitando ainda pausa', storeEco.getContact(CLI_ECO)?.paused === true);
-  t('  e o cliente é avisado', avisos.some((a) => /suporte/i.test(a.texto)),
+  t('  e o cliente NÃO é avisado', avisos.length === 0,
     avisos.map((a) => a.texto.split('\n')[0]).join(' | ') || '(nada)');
 
   evolutionEco.sendText = sendTextAntes;

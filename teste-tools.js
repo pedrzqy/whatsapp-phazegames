@@ -409,14 +409,13 @@ nerix.checkPayment = async (codigo) => {
   await handlers.onOperadorDigitou({ para: `${CLI_HO}@s.whatsapp.net`, texto: 'oi, aqui é o Pedro' });
 
   t('pausa o contato', storeMod.getContact(CLI_HO)?.paused === true);
-  t('e avisa o cliente uma vez', /suporte/i.test(enviadasHO.join('')), enviadasHO[0]?.slice(0, 40));
-  t('dizendo como voltar', /#inicio/.test(enviadasHO.join('')));
+  t('e NÃO manda aviso nenhum ao cliente', enviadasHO.length === 0, enviadasHO[0]?.slice(0, 40));
 
   // O operador manda três, quatro mensagens seguidas. Avisar em cada uma seria
   // pior que o problema.
   enviadasHO.length = 0;
   await handlers.onOperadorDigitou({ para: `${CLI_HO}@s.whatsapp.net`, texto: 'segunda mensagem' });
-  t('não repete o aviso nas seguintes', enviadasHO.length === 0, enviadasHO.join(''));
+  t('segue calado nas seguintes', enviadasHO.length === 0, enviadasHO.join(''));
 
   // O operador falando consigo mesmo (os #comandos) não é atendimento.
   enviadasHO.length = 0;
