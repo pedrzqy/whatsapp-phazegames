@@ -249,6 +249,69 @@ async function avisarOperador(texto, opts = {}) {
   }
 }
 
+// ── Grupo da equipe: para onde vão os avisos de venda ────────
+
+/** Nome do grupo da equipe, para achar o JID sozinho. */
+const NOME_GRUPO_STAFF = process.env.VENDAS_GRUPO_NOME || 'Phaze Games - STAFF';
+const CACHE_GRUPO_MS = 10 * 60 * 1000;
+let cacheGrupo = { jid: null, em: 0 };
+
+const normNome = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+
+/**
+ * Qual grupo recebe o aviso de venda, ou null (aí vai para o privado).
+ *
+ * Ordem: o que o dono registrou com #staff dentro do grupo > VENDAS_GRUPO_JID
+ * > o grupo com o nome "Phaze Games - STAFF" (achado pela Evolution, guardado
+ * 10 min). '#staff off' desliga tudo isso e volta ao privado.
+ */
+async function grupoDeVendas() {
+  const estado = require('./ponte/estado').dados;
+  const salvo = estado.grupoVendas;
+  if (salvo === 'off') return null;
+  if (salvo) return salvo;
+  if (process.env.VENDAS_GRUPO_JID) return process.env.VENDAS_GRUPO_JID.trim();
+
+  const config = require('./config');
+  if (!config.evolution?.apiKey) return null;
+  if (Date.now() - cacheGrupo.em < CACHE_GRUPO_MS) return cacheGrupo.jid;
+  let jid = null;
+  try {
+    const grupos = await require('./evolution').fetchAllGroups();
+    const alvo = normNome(NOME_GRUPO_STAFF);
+    jid = grupos.find((g) => normNome(g.subject || g.name) === alvo)?.id || null;
+  } catch (err) {
+    console.warn('[vendas] não consegui listar os grupos:', err.message);
+  }
+  cacheGrupo = { jid, em: Date.now() };
+  return jid;
+}
+
+/** Registra (ou limpa) o grupo da equipe. 'off' desliga; null volta ao automático. */
+function definirGrupoVendas(valor) {
+  const est = require('./ponte/estado');
+  est.dados.grupoVendas = valor;
+  cacheGrupo = { jid: null, em: 0 };
+  est.persistAgora();
+}
+
+/**
+ * Aviso de venda: grupo da equipe primeiro; se não há grupo ou o envio falha,
+ * vai para o privado do(s) operador(es), como sempre foi.
+ */
+async function avisarVenda(texto) {
+  const grupo = await grupoDeVendas().catch(() => null);
+  if (grupo) {
+    try {
+      await sender.send(grupo, texto, { typing: false });
+      return;
+    } catch (err) {
+      console.error(`[vendas] falha ao avisar o grupo ${grupo}, indo para o privado:`, err.message);
+    }
+  }
+  await avisarOperador(texto);
+}
+
 // ── Pedido em aberto: o Pix vai AGORA ────────────────────────
 
 /**
@@ -337,7 +400,7 @@ async function notificarVenda(pedido) {
   }
 
   linhas.push('', `_Pedido ${pedido.codigo}_`);
-  await avisarOperador(linhas.join('\n'));
+  await avisarVenda(linhas.join('\n'));
 }
 
 /**
@@ -755,6 +818,9 @@ module.exports = {
   // chave e mandar para o número errado são as duas falhas caras deste
   // arquivo, e as duas moram nestas funções.
   paraWhatsApp,
+  grupoDeVendas,
+  definirGrupoVendas,
+  NOME_GRUPO_STAFF,
   /** Quando chegou o último evento da loja. 0 = nunca chegou nenhum. */
   ultimoEventoEm: () => dados.ultimoEventoEm || 0,
 

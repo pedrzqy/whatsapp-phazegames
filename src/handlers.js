@@ -1170,4 +1170,33 @@ async function onNerixEvent(event) {
 // extrairPedido e respostaDePedido exportados para teste: são eles que
 // substituíram a IA no caminho de consulta, e um erro ali entrega dado de
 // pedido errado ou deixa o cliente sem resposta.
-module.exports = { onIncomingMessage, onNerixEvent, onOperadorDigitou, extrairPedido, respostaDePedido };
+/**
+ * Comando do operador DENTRO de um grupo (hoje só o #staff).
+ *
+ * O bot não conversa em grupo, e isto não muda: só entra aqui um #staff, e só
+ * de número que está na lista de operadores. Em grupo o remetente vem em
+ * `participant` (o `remoteJid` é o grupo), então quem decide é a lista de
+ * candidatos de quem mandou. Qualquer outra mensagem de grupo, ou #staff de
+ * quem não é operador, é ignorada em silêncio.
+ *
+ * @param {{grupo:string, remetentes:string[], texto:string}} p
+ * @returns {Promise<boolean>} true se tratou
+ */
+async function onGrupoComando({ grupo, remetentes = [], texto }) {
+  if (!/^#staff\b/i.test(String(texto || '').trim())) return false;
+  const cfgOp = require('./ponte/config').operador;
+  const quem = remetentes.filter(Boolean).find((r) => cfgOp.ehOperador(r));
+  if (!quem) {
+    console.warn(`[grupo] #staff em ${grupo} de ${remetentes.filter(Boolean).join('/') || '?'} — não é operador, ignorei`);
+    return false;
+  }
+  try {
+    const resposta = await operador.executar(String(texto).trim(), quem, { grupo });
+    if (resposta) await sender.send(grupo, resposta, { typing: false });
+  } catch (err) {
+    console.error('[grupo] #staff falhou:', err.message);
+  }
+  return true;
+}
+
+module.exports = { onIncomingMessage, onNerixEvent, onOperadorDigitou, onGrupoComando, extrairPedido, respostaDePedido };

@@ -69,6 +69,12 @@ let dados = {
    * exibir depois seria guardar algo que não pode sair no WhatsApp.
    */
   ignorados: [],
+  /**
+   * Destino dos avisos de venda. JID do grupo (…@g.us) registrado com #staff
+   * DENTRO do grupo; 'off' = desligado de propósito; null = não escolhido
+   * (cai na env VENDAS_GRUPO_JID e depois no nome do grupo).
+   */
+  grupoVendas: null,
   limites: {},
   disjuntor: { estado: 'fechado', motivo: null, printPath: null, falhasSeguidas: 0, abertoEm: null },
   seq: 0,

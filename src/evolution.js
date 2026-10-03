@@ -53,6 +53,19 @@ async function sendPresence(number, presence = 'composing', opts = {}) {
 }
 
 /**
+ * Todos os grupos de que o número participa (id + nome).
+ * Serve para achar o grupo da equipe pelo NOME, sem o dono caçar JID.
+ */
+async function fetchAllGroups(opts = {}) {
+  const instance = opts.instance || config.evolution.instance;
+  const { data } = await http.get(`/group/fetchAllGroups/${instance}`, {
+    params: { getParticipants: 'false' },
+    timeout: 15000,
+  });
+  return Array.isArray(data) ? data : [];
+}
+
+/**
  * O WhatsApp está conectado?
  *
  * Devolve o estado cru da instância ('open' = conectado). Serve ao #status: se
@@ -196,5 +209,6 @@ module.exports = {
   estadoInstancia,
   conectarInstancia,
   portaoDoGrupo,
+  fetchAllGroups,
   getBase64FromMediaMessage,
 };

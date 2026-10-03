@@ -738,6 +738,68 @@ const CLI = '5541999998888';
   cfgM.autoReply = autoAntesM;
 
 
+
+  // ── Aviso de venda no grupo da equipe (#staff) ────────────────
+  bloco('venda paga vai para o grupo da equipe');
+  {
+    const GRUPO = '120363000000000001@g.us';
+    const handlersG = require('./src/handlers');
+    const op = require('./src/ponte/operador');
+    const estadoG = require('./src/ponte/estado');
+    const vencerPedido = async (n) => {
+      enviadas = [];
+      pedidoFalso = pedido({ order_number: n });
+      await vendas.onEvento({ event: 'order.paid', data: { order_number: n } });
+    };
+
+    // Sem grupo: privado, como sempre.
+    await vencerPedido('ped-g0');
+    t('sem grupo, o aviso vai ao operador', enviadas.some((e) => e.para === OP && /Venda paga/.test(e.texto)));
+
+    // #staff de quem NÃO é operador, dentro do grupo: ignorado.
+    const intruso = await handlersG.onGrupoComando({ grupo: GRUPO, remetentes: ['5511900001111@s.whatsapp.net'], texto: '#staff' });
+    t('#staff de não-operador é ignorado', intruso === false && !estadoG.dados.grupoVendas);
+    const outroTexto = await handlersG.onGrupoComando({ grupo: GRUPO, remetentes: [OP + '@s.whatsapp.net'], texto: 'oi pessoal' });
+    t('conversa comum no grupo não é tratada', outroTexto === false);
+
+    // Operador manda #staff no grupo (remetente em participant).
+    enviadas = [];
+    const ok = await handlersG.onGrupoComando({ grupo: GRUPO, remetentes: [OP + '@s.whatsapp.net'], texto: '#staff' });
+    t('#staff do operador no grupo registra', ok === true && estadoG.dados.grupoVendas === GRUPO);
+    t('  e confirma no próprio grupo', enviadas.some((e) => e.para === GRUPO && /neste grupo/.test(e.texto)));
+
+    await vencerPedido('ped-g1');
+    t('venda vai para o grupo', enviadas.some((e) => e.para === GRUPO && /Venda paga/.test(e.texto)));
+    t('  e não duplica no privado', !enviadas.some((e) => e.para === OP && /Venda paga/.test(e.texto)));
+    t('  cliente continua recebendo a confirmação', enviadas.some((e) => e.para === CLI));
+
+    // Grupo falha: cai no privado.
+    const sendOk = sender.send;
+    sender.send = async (para, texto, opts = {}) => {
+      if (para === GRUPO) throw new Error('bot fora do grupo');
+      return sendOk(para, texto, opts);
+    };
+    await vencerPedido('ped-g2');
+    sender.send = sendOk;
+    t('grupo falhou: o aviso vai ao privado', enviadas.some((e) => e.para === OP && /Venda paga/.test(e.texto)));
+
+    // #staff off.
+    await op.executar('#staff off', OP);
+    await vencerPedido('ped-g3');
+    t('#staff off volta ao privado', enviadas.some((e) => e.para === OP && /Venda paga/.test(e.texto)) &&
+      !enviadas.some((e) => e.para === GRUPO));
+
+    // Por nome (Evolution) quando nada foi registrado.
+    require('./src/config').evolution.apiKey = 'x';
+    require('./src/evolution').fetchAllGroups = async () => [
+      { id: '1@g.us', subject: 'Outro' }, { id: GRUPO, subject: 'Phaze Games - STAFF' },
+    ];
+    await op.executar('#staff auto', OP);
+    await vencerPedido('ped-g4');
+    t('sem registro, acha o grupo pelo nome', enviadas.some((e) => e.para === GRUPO && /Venda paga/.test(e.texto)));
+    await op.executar('#staff off', OP);
+  }
+
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));
   process.exit(falhas ? 1 : 0);
 })();

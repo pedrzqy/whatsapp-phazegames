@@ -94,7 +94,22 @@ app.post('/webhooks/evolution', async (req, res) => {
     // achando que era conversa privada. (Por padrão a Evolution nem entrega
     // mensagem de grupo, `groupsIgnore=true`, mas isso é configuração de outro
     // serviço e não é onde uma regra desta deve morar.)
-    if (/@g\.us$/i.test(remoteJid)) return;
+    if (/@g\.us$/i.test(remoteJid)) {
+      // Única exceção: o #staff de um operador, que registra o grupo como
+      // destino dos avisos de venda. O bot continua sem conversar em grupo.
+      // Quem mandou vem em `participant` (às vezes o número real vem num campo
+      // ao lado quando o principal é um @lid).
+      if (/^#staff\b/i.test(text.trim())) {
+        await handlers
+          .onGrupoComando({
+            grupo: remoteJid,
+            remetentes: [key.participant, key.participantAlt, data.participant, data.senderPn],
+            texto: text,
+          })
+          .catch((err) => console.error('[webhooks/evolution] onGrupoComando:', err.message));
+      }
+      return;
+    }
 
     // IMAGEM (só no 1-a-1, depois do desvio de grupos): a Evolution entrega
     // apenas os metadados no webhook e o binário é baixado sob demanda.

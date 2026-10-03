@@ -36,6 +36,7 @@ const AJUDA = [
   '',
   '*#admin* — painel: liga e desliga cada função',
   '*#grupo* — abre ou fecha o grupo na mão, para testar o horário',
+  '*#staff* — mande DENTRO do grupo da equipe: as vendas passam a ser avisadas lá · *#staff off* volta ao privado · *#staff teste*',
   '*#status* — testa tudo e diz o que está errado',
   '*#fila* — quem está sendo atendido e quem espera',
   '*#vendas* — vendas de hoje, faturamento e o que falta entregar',
@@ -69,7 +70,7 @@ const min = (ms) => Math.round(ms / 60000);
 // decidir e para logar o motivo de ter ignorado), e duas copias divergiriam --
 // que e como o "script" escapou do filtro de vocabulario uma vez.
 const RE_COMANDOS =
-  /^#(fila|status|vendas|historico|liberar|ok|enviar|editar|responder|casos|analisar|admin|nao|não|pular|ajuda|sms|taobao|teste|limpar|destravar|atender|auto|recarregar|grupo)\b/i;
+  /^#(fila|status|vendas|historico|liberar|ok|enviar|editar|responder|casos|analisar|admin|nao|não|pular|ajuda|sms|taobao|teste|limpar|destravar|atender|auto|recarregar|grupo|staff)\b/i;
 
 /** É comando de operador? */
 function ehComando(from, texto) {
@@ -131,7 +132,7 @@ function ehComando(from, texto) {
  * @param {string} de    número de quem mandou
  * @returns {Promise<string>} resposta a mandar de volta a quem mandou
  */
-async function executar(texto, de = '') {
+async function executar(texto, de = '', ctx = {}) {
   const bruto = String(texto || '').trim();
   const [, cmdRaw, resto = ''] = bruto.match(/^#(\S+)\s*([\s\S]*)$/) || [];
   const cmd = (cmdRaw || '').toLowerCase();
@@ -139,6 +140,44 @@ async function executar(texto, de = '') {
   const argumento = palavras.join(' ');
 
   if (cmd === 'ajuda') return AJUDA;
+
+  // ── #staff — para onde vão os avisos de venda ───────────
+  //
+  // Mandado DENTRO do grupo da equipe, registra aquele grupo como destino: o
+  // JID vem da própria mensagem, então o dono não precisa caçar id nenhum.
+  // Persiste em ponte.json, sobrevive ao deploy. Se o grupo falhar na hora de
+  // avisar, a venda ainda vai para o privado.
+  if (cmd === 'staff') {
+    const vendas = require('../vendas');
+    const acao = (id || '').toLowerCase();
+    if (acao === 'off' || acao === 'desligar') {
+      vendas.definirGrupoVendas('off');
+      return '🔕 Avisos de venda só no privado agora. *#staff* dentro do grupo religa.';
+    }
+    if (acao === 'auto') {
+      vendas.definirGrupoVendas(null);
+      return `🔁 Voltei ao automático: procuro o grupo "${vendas.NOME_GRUPO_STAFF}" pelo nome.`;
+    }
+    if (acao === 'teste') {
+      const g = await vendas.grupoDeVendas();
+      if (!g) return 'Não há grupo definido. Mande *#staff* dentro do grupo da equipe.';
+      try {
+        await sender.send(g, '✅ Teste: as vendas serão avisadas aqui.', { typing: false });
+        return 'Mandei o teste no grupo.';
+      } catch (err) {
+        return `Não consegui mandar no grupo: ${err.message}\nConfira se o número do bot está nele.`;
+      }
+    }
+    if (ctx.grupo && !acao) {
+      vendas.definirGrupoVendas(ctx.grupo);
+      return '✅ Pronto: as vendas pagas serão avisadas neste grupo.\n_*#staff off* volta ao privado._';
+    }
+    const g = await vendas.grupoDeVendas().catch(() => null);
+    return (
+      (g ? `Avisos de venda vão para o grupo ${g}.` : 'Avisos de venda vão para o seu privado.') +
+      '\n\n_Para escolher o grupo, mande *#staff* dentro dele. Também: *#staff off* · *#staff auto* · *#staff teste*._'
+    );
+  }
 
   // ── #grupo — abrir e fechar na mão, para testar ─────────
   //
