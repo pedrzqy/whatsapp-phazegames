@@ -1329,7 +1329,11 @@ async function tick() {
       );
       await alertar(`⏱️ Atendimento de *${v.nome}* (\`${v.usuario}\`) expirou sem código.`);
     }
-    if (vencidos.length) await promoverProximo();
+    // Fila vazia com gente parada na entrada: ninguém ia chamá-los (o gancho
+    // só roda quando um atendimento encerra), e a posição ficava inflada por
+    // até 2h. O tick acorda a espera.
+    const parados = !fila.ativo() && require('./recepcao').esperandoVez().length > 0;
+    if (vencidos.length || parados) await promoverProximo();
   } catch (err) {
     console.error('[ponte/tick] erro:', err.message);
   }

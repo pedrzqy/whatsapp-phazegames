@@ -352,6 +352,24 @@ function esperandoVez() {
 }
 
 /**
+ * Esvazia a espera da entrada e devolve quem estava nela.
+ *
+ * É a metade do `#limpar fila` que faltava: o comando só olhava o fila.js, e o
+ * cliente barrado na entrada continuava ouvindo "tem 3 na sua frente" com o
+ * operador recebendo "já está tudo vazio".
+ *
+ * @returns {string[]} os números que estavam esperando a vez
+ */
+function limparEspera() {
+  const quem = esperandoVez();
+  if (!quem.length) return [];
+  const p = pendentes();
+  for (const f of quem) delete p[f];
+  persist();
+  return quem;
+}
+
+/**
  * Quantos estão na frente deste cliente agora.
  *
  * Soma as duas filas, porque hoje existem duas: a de quem já entregou foto e
@@ -554,5 +572,5 @@ module.exports = {
   // A outra metade da fila: quem foi barrado na entrada e ainda nao entregou
   // nada. Quem chama e o promoverProximo do index.js, no mesmo gancho que ja
   // avisava a vez de quem esta na fila.
-  chamarProximoDaEspera, esperandoVez, quantosNaFrente,
+  chamarProximoDaEspera, esperandoVez, quantosNaFrente, limparEspera,
 };

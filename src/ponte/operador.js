@@ -946,7 +946,12 @@ async function executar(texto, de = '') {
     const tarefas = dados.tarefas.filter((t) => t.estado === 'aguardando_aprovacao').length;
     const respostas = dados.aprovacoes.length;
     const s = fila.situacao();
-    const presos = (s.ativo ? 1 : 0) + s.aguardando.length;
+    // Conta também quem foi barrado na ENTRADA ("tem 3 na sua frente"). Essa
+    // espera mora na recepcao.js, não no fila.js, e o #limpar só olhava a
+    // segunda: respondia "já está tudo vazio" com cliente esperando.
+    const recepcao = require('./recepcao');
+    const naEntrada = recepcao.esperandoVez();
+    const presos = (s.ativo ? 1 : 0) + s.aguardando.length + naEntrada.length;
 
     if (!tudo) {
       if (!tarefas && !respostas) {
@@ -972,6 +977,14 @@ async function executar(texto, de = '') {
 
     // ── #limpar fila ──
     if (!presos && !tarefas && !respostas) return 'Já está tudo vazio.';
+
+    const avisoEntrada =
+      'Não consegui pegar seu código agora 🙏\n\n' +
+      'Digita *#inicio* e pede de novo que eu resolvo.';
+    const daEntrada = recepcao.limparEspera();
+    for (const from of daEntrada) {
+      await sender.send(from, avisoEntrada).catch(() => {});
+    }
 
     const paraAvisar = [s.ativo, ...s.aguardando].filter(Boolean);
     for (const a of paraAvisar) {
@@ -1003,7 +1016,9 @@ async function executar(texto, de = '') {
 
     return (
       `🧹 *Fila limpa.*\n\n` +
-      `${paraAvisar.length} cliente(s) encerrado(s) e avisado(s).\n` +
+      `${paraAvisar.length + daEntrada.length} cliente(s) encerrado(s) e avisado(s)` +
+      (daEntrada.length ? ` (${daEntrada.length} esperando na entrada)` : '') +
+      '.\n' +
       `${tarefas} envio(s) e ${respostas} resposta(s) descartados.`
     );
   }

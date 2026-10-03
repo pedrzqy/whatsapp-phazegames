@@ -1046,6 +1046,30 @@ const OP = '5541999999999';
   t('e avisa TODOS os clientes', avisados.length === 3, `avisou ${avisados.length}`);
   t('e diz quantos foram', /3 cliente/i.test(limpou), limpou.split('\n')[2] || '');
 
+  // Bug real: cliente barrado na entrada ("tem 3 na sua frente") não estava no
+  // fila.js, e o #limpar fila respondia "Já está tudo vazio.".
+  bloco('#limpar fila também esvazia a espera da entrada');
+  {
+    const recep = require('./src/ponte/recepcao');
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.pendentes = {};
+    const esp = ['5511922220001', '5511922220002', '5511922220003'];
+    for (const f of esp) {
+      estadoPonte.dados.pendentes[f] = { usuario: null, imagem: null, etapa: 'esperando_vez', em: Date.now() };
+    }
+    const av2 = [];
+    const sr = require('./src/sender').send;
+    require('./src/sender').send = async (para, texto) => { av2.push(para); };
+    const r = await operador.executar('#limpar fila', OP);
+    require('./src/sender').send = sr;
+    t('não diz que está vazio', !/Já está tudo vazio/.test(r), r);
+    t('esvazia a espera', recep.esperandoVez().length === 0);
+    t('avisa os 3', av2.length === 3, String(av2.length));
+    t('diz quantos', /3 cliente/.test(r), r);
+    const de = await operador.executar('#limpar fila', OP);
+    t('de novo, aí sim está vazio', /Já está tudo vazio/.test(de), de);
+  }
+
   // O que o cliente LÊ. É a mensagem que ele recebe do nada, sem ter feito
   // nada errado, e o dono leu a versão anterior de fora e não entendeu: ela
   // pedia para responder "preciso do código", uma frase que o cliente tem que
