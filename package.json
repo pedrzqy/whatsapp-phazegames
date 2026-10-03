@@ -7,7 +7,11 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+<<<<<<< HEAD
     "teste": "node teste-ponte.js && node teste-tools.js && node teste-vendas.js && node teste-deepseek.js && node teste-webhook.js && node teste-web.js"
+=======
+    "teste": "node teste-ponte.js && node teste-tools.js && node teste-vendas.js && node teste-deepseek.js && node teste-webhook.js && node teste-combo.js && node teste-xpag.js"
+>>>>>>> 1d6a6af (xpag: base preparatoria da integracao com o gateway)
   },
   "engines": {
     "node": ">=20"

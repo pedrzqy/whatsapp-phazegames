@@ -287,6 +287,74 @@ app.get('/webhooks/nerix', (req, res) => {
   );
 });
 
+// ─── XPag — base preparatoria ────────────────────────────────────────
+//
+// Recebe o aviso de mudanca de estado de uma cobranca. Ainda NAO libera
+// pedido nem entrega nada: a loja continua com o gateway de hoje, e ligar os
+// dois e um passo seguinte, deliberado.
+//
+// DUAS TRAVAS, e as duas importam:
+//
+// 1. A XPag nao assina o webhook. Nao ha header de assinatura na doc, so o
+//    corpo. Entao qualquer um que descubra a URL poderia mandar um
+//    "status":"confirmed" e, no dia em que isso liberar pedido, liberaria de
+//    graca. Por isso a URL carrega um segredo, igual ao webhook da Nerix.
+//
+// 2. Mesmo com o segredo certo, o corpo nao e tratado como verdade: o estado
+//    real e lido de volta no /consult-transaction antes de qualquer coisa. A
+//    propria doc deles recomenda reconciliar, e aqui isso e obrigatorio.
+app.get('/webhooks/xpag', (req, res) => {
+  const x = require('./xpag');
+  res.type('text/plain').send(
+    'Webhook da XPag no ar.\n' +
+      `Credenciais configuradas: ${x.configurado() ? 'SIM' : 'NAO'}\n` +
+      `Token exigido: ${config.webhook.xpagSecret ? 'SIM' : 'NAO (aceita qualquer chamada)'}\n`,
+  );
+});
+
+app.post('/webhooks/xpag', async (req, res) => {
+  const xpag = require('./xpag');
+
+  if (config.webhook.xpagSecret && req.query.secret !== config.webhook.xpagSecret) {
+    console.warn('[webhooks/xpag] RECUSADO: o token da URL nao bate com o XPAG_WEBHOOK_SECRET.');
+    return res.status(401).json({ error: 'Assinatura invalida' });
+  }
+
+  // Responde antes de conferir. A XPag espera o 200 rapido, e a conferencia
+  // chama a API deles de volta; segurar a resposta ate o fim faria o aviso ser
+  // reenviado por timeout.
+  res.json({ ok: true });
+
+  const evento = xpag.lerWebhook(req.body);
+  console.log(
+    `[webhooks/xpag] ${evento.tipo || 'sem tipo'} ${evento.status || 'sem status'} ` +
+      `| external_id: ${evento.externalId || '(vazio)'} | e2e: ${evento.e2e || '(vazio)'}` +
+      (evento.estatica ? ' | chave fixa' : ''),
+  );
+
+  if (evento.status === 'med') {
+    console.warn(`[webhooks/xpag] DISPUTA no pedido ${evento.externalId || evento.transacao}: entrada confirmada foi contestada.`);
+    return;
+  }
+
+  if (evento.tipo !== 'cashin' || evento.status !== 'confirmed') return;
+
+  const real = await xpag.consultar({ transacao: evento.transacao, e2e: evento.e2e });
+  if (!real.ok) {
+    console.warn(`[webhooks/xpag] nao consegui conferir ${evento.transacao}: ${real.codigo}`);
+    return;
+  }
+  if (real.status !== 'confirmed') {
+    console.warn(
+      `[webhooks/xpag] AVISO DIVERGENTE: o corpo dizia confirmed e a consulta diz ${real.status} ` +
+        `(transacao ${evento.transacao}). Ignorado.`,
+    );
+    return;
+  }
+
+  console.log(`[webhooks/xpag] pagamento conferido: ${evento.externalId || evento.transacao} por R$ ${real.valor}`);
+});
+
 app.post('/webhooks/nerix', async (req, res) => {
   const { secret } = req.query;
 

@@ -137,6 +137,24 @@ const config = {
 
   webhook: {
     nerixSecret: process.env.NERIX_WEBHOOK_SECRET || '',
+    xpagSecret: process.env.XPAG_WEBHOOK_SECRET || '',
+  },
+
+  // XPag — gateway de pagamento (cash in por Pix, cash out, consulta).
+  //
+  // O CLIENT SECRET nunca pode sair daqui para o template da loja: a Nerix
+  // serve os arquivos sem build e tudo que esta la e publico. Por isso a
+  // integracao mora no bot, que e o unico lado com segredo.
+  //
+  // Sem as variaveis definidas o modulo fica inerte e diz isso no log, em vez
+  // de quebrar o boot: o resto do bot nao tem nada a ver com pagamento.
+  xpag: {
+    url: (process.env.XPAG_API_URL || 'https://api.xpag.global').replace(/\/$/, ''),
+    clientId: process.env.XPAG_CLIENT_ID || '',
+    clientSecret: process.env.XPAG_CLIENT_SECRET || '',
+    // A URL que a XPag chama quando a cobranca muda de estado. Vai no CORPO de
+    // cada cobranca, porque nao existe cadastro de webhook no painel deles.
+    webhookUrl: process.env.XPAG_WEBHOOK_URL || '',
   },
 
   // Token da tela de reconectar o WhatsApp (/conectar).
