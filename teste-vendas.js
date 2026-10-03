@@ -798,6 +798,39 @@ const CLI = '5541999998888';
     await vencerPedido('ped-g4');
     t('sem registro, acha o grupo pelo nome', enviadas.some((e) => e.para === GRUPO && /Venda paga/.test(e.texto)));
     await op.executar('#staff off', OP);
+
+    // fromMe (dono no WhatsApp Web logado como o bot) dentro do grupo.
+    estadoG.dados.grupoVendas = null;
+    enviadas = [];
+    const fm = await handlersG.onGrupoComando({ grupo: GRUPO, remetentes: [], texto: '#staff', doBot: true });
+    t('#staff fromMe no grupo registra', fm === true && estadoG.dados.grupoVendas === GRUPO);
+    t('  e o nome aparece na resposta', enviadas.some((e) => e.para === GRUPO && /Phaze Games - STAFF/.test(e.texto)));
+    await handlersG.onGrupoComando({ grupo: GRUPO, remetentes: [], texto: '#staff off', doBot: true });
+    t('#staff off fromMe funciona', estadoG.dados.grupoVendas === 'off');
+    const resp = await handlersG.onGrupoComando({ grupo: GRUPO, remetentes: [], texto: 'bom dia', doBot: true });
+    t('fromMe que não é #staff é ignorado', resp === false);
+
+    // Nome exato: nunca "Phaze Games" nem comunidade.
+    const achar = vendas.acharGrupoPorNome;
+    const G = (id, nome, comunidade = false) => ({ id, nome, comunidade });
+    t('acha o STAFF e não o "Phaze Games"', achar([G('a@g.us', 'Phaze Games'), G('b@g.us', 'Phaze Games - STAFF')]).jid === 'b@g.us');
+    t('traço longo e caixa diferente', achar([G('b@g.us', 'PHAZE GAMES – Staff')]).jid === 'b@g.us');
+    t('só "Phaze Games": não chuta', achar([G('a@g.us', 'Phaze Games'), G('c@g.us', 'Phaze Games Comunidade')]).jid === null);
+    t('comunidade e subgrupo de mesmo nome: fica o subgrupo',
+      achar([G('c@g.us', 'Phaze Games - STAFF', true), G('b@g.us', 'Phaze Games - STAFF')]).jid === 'b@g.us');
+    t('dois iguais: ambíguo, não chuta', achar([G('c@g.us', 'Phaze Games - STAFF'), G('b@g.us', 'Phaze Games - STAFF')]).jid === null);
+
+    // #staff grupos + #staff 2
+    require('./src/evolution').fetchAllGroups = async () => [
+      { id: '9@g.us', subject: 'Zeta' }, { id: GRUPO, subject: 'Phaze Games - STAFF' }, { id: '1@g.us', subject: 'Alfa' },
+    ];
+    const lista = await op.executar('#staff grupos', OP);
+    t('#staff grupos lista numerado com nomes', /1\. Alfa/.test(lista) && /2\. Phaze Games - STAFF/.test(lista) && /3\. Zeta/.test(lista));
+    const esc = await op.executar('#staff 2', OP);
+    t('#staff 2 escolhe pelo número e mostra o nome', estadoG.dados.grupoVendas === GRUPO && /Phaze Games - STAFF/.test(esc));
+    t('#staff 9 fora da lista é recusado', /não está na lista/.test(await op.executar('#staff 9', OP)));
+    t('#staff mostra o nome e a origem', /Phaze Games - STAFF/.test(await op.executar('#staff', OP)));
+    await op.executar('#staff off', OP);
   }
 
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));

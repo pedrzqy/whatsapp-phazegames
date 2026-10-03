@@ -36,7 +36,7 @@ const AJUDA = [
   '',
   '*#admin* — painel: liga e desliga cada função',
   '*#grupo* — abre ou fecha o grupo na mão, para testar o horário',
-  '*#staff* — mande DENTRO do grupo da equipe: as vendas passam a ser avisadas lá · *#staff off* volta ao privado · *#staff teste*',
+  '*#staff* — mostra para onde vão os avisos de venda · *#staff grupos* lista os grupos do número · *#staff 2* escolhe o nº 2 · *#staff off* volta ao privado · *#staff auto* acha pelo nome · *#staff teste*',
   '*#status* — testa tudo e diz o que está errado',
   '*#fila* — quem está sendo atendido e quem espera',
   '*#vendas* — vendas de hoje, faturamento e o que falta entregar',
@@ -158,25 +158,57 @@ async function executar(texto, de = '', ctx = {}) {
       vendas.definirGrupoVendas(null);
       return `🔁 Voltei ao automático: procuro o grupo "${vendas.NOME_GRUPO_STAFF}" pelo nome.`;
     }
-    if (acao === 'teste') {
-      const g = await vendas.grupoDeVendas();
-      if (!g) return 'Não há grupo definido. Mande *#staff* dentro do grupo da equipe.';
+    if (acao === 'grupos' || acao === 'lista') {
+      let lista;
       try {
-        await sender.send(g, '✅ Teste: as vendas serão avisadas aqui.', { typing: false });
-        return 'Mandei o teste no grupo.';
+        lista = await vendas.listarGrupos();
+      } catch (err) {
+        return `Não consegui listar os grupos: ${err.message}`;
+      }
+      if (!lista.length) return 'O número do bot não está em nenhum grupo.';
+      const atual = (await vendas.destinoDeVendas().catch(() => ({}))).jid;
+      return (
+        '*Grupos do bot*\n' +
+        lista.map((g, i) => `${i + 1}. ${g.nome}${g.comunidade ? ' (comunidade)' : ''}${g.id === atual ? ' ✅' : ''}`).join('\n') +
+        '\n\n_Mande *#staff <número>* para escolher o grupo dos avisos._'
+      );
+    }
+    if (/^\d+$/.test(acao)) {
+      const g = vendas.ultimaListaGrupos()[Number(acao) - 1];
+      if (!g) return 'Esse número não está na lista. Mande *#staff grupos* para ver a lista atual.';
+      vendas.definirGrupoVendas(g.id);
+      return `✅ Pronto: as vendas pagas serão avisadas no grupo "${g.nome}".\n_*#staff teste* manda uma mensagem lá · *#staff off* volta ao privado._`;
+    }
+    const nomeAtual = async (jid) => {
+      if (!jid) return '';
+      if (!vendas.nomeDoGrupo(jid)) await vendas.listarGrupos().catch(() => {});
+      const n = vendas.nomeDoGrupo(jid);
+      return n ? `"${n}" (${jid})` : jid;
+    };
+    if (acao === 'teste') {
+      const d = await vendas.destinoDeVendas();
+      if (!d.jid) return 'Não há grupo definido. Mande *#staff grupos* e escolha um número.';
+      try {
+        await sender.send(d.jid, '✅ Teste: as vendas serão avisadas aqui.', { typing: false });
+        return `Mandei o teste no grupo ${await nomeAtual(d.jid)}.`;
       } catch (err) {
         return `Não consegui mandar no grupo: ${err.message}\nConfira se o número do bot está nele.`;
       }
     }
     if (ctx.grupo && !acao) {
       vendas.definirGrupoVendas(ctx.grupo);
-      return '✅ Pronto: as vendas pagas serão avisadas neste grupo.\n_*#staff off* volta ao privado._';
+      const n = await nomeAtual(ctx.grupo);
+      return `✅ Pronto: as vendas pagas serão avisadas neste grupo${n ? ' ' + n : ''}.\n_*#staff off* volta ao privado._`;
     }
-    const g = await vendas.grupoDeVendas().catch(() => null);
-    return (
-      (g ? `Avisos de venda vão para o grupo ${g}.` : 'Avisos de venda vão para o seu privado.') +
-      '\n\n_Para escolher o grupo, mande *#staff* dentro dele. Também: *#staff off* · *#staff auto* · *#staff teste*._'
-    );
+    const d = await vendas.destinoDeVendas().catch(() => ({ jid: null, origem: 'nenhum' }));
+    const origem = { registrado: 'escolhido por você', env: 'da variável VENDAS_GRUPO_JID', nome: `achado pelo nome "${vendas.NOME_GRUPO_STAFF}"` }[d.origem] || '';
+    const linha =
+      d.origem === 'off'
+        ? 'Avisos de venda só no seu privado (#staff off).'
+        : d.jid
+          ? `Avisos de venda vão para o grupo ${await nomeAtual(d.jid)} — ${origem}.`
+          : 'Avisos de venda vão para o seu privado (nenhum grupo definido).';
+    return linha + '\n\n_Escolher: *#staff grupos*, depois *#staff <número>*. Também: *#staff off* · *#staff auto* · *#staff teste*._';
   }
 
   // ── #grupo — abrir e fechar na mão, para testar ─────────

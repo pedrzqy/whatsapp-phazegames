@@ -256,35 +256,93 @@ const NOME_GRUPO_STAFF = process.env.VENDAS_GRUPO_NOME || 'Phaze Games - STAFF';
 const CACHE_GRUPO_MS = 10 * 60 * 1000;
 let cacheGrupo = { jid: null, em: 0 };
 
-const normNome = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+// Regra ANTIGA (era a que estava em produção): minúscula, sem acento, espaço
+// colapsado. Fica como reserva, para nunca perder o grupo que já funciona.
+const normNomeAntigo = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+
+// Regra nova: além da antiga, NFKC e qualquer tipo de traço (hífen, en-dash,
+// em-dash) viram "-". Sempre nome COMPLETO: "Phaze Games" não é "Phaze Games - STAFF".
+const normNome = (s) =>
+  normNomeAntigo(String(s || '').normalize('NFKC').replace(/[‐-―−﹘﹣－]/g, '-'))
+    .replace(/\s*-\s*/g, ' - ');
+
+let ultimaLista = [];
+
+/** Grupos do número no formato [{id, nome, comunidade}]; guardados para `#staff <n>`. */
+async function listarGrupos() {
+  const grupos = await require('./evolution').fetchAllGroups();
+  ultimaLista = grupos
+    .filter((g) => g && g.id)
+    .map((g) => ({
+      id: g.id,
+      nome: String(g.subject || g.name || '').trim() || '(sem nome)',
+      comunidade: Boolean(g.isCommunity || g.isCommunityAnnounce),
+    }))
+    .sort((x, y) => x.nome.localeCompare(y.nome, 'pt'));
+  return ultimaLista;
+}
+
+/** A última lista mostrada por `#staff grupos` (para escolher por número). */
+const ultimaListaGrupos = () => ultimaLista;
+
+/** Nome do grupo, se já o vimos em alguma listagem. */
+function nomeDoGrupo(jid) {
+  return ultimaLista.find((g) => g.id === jid)?.nome || null;
+}
 
 /**
- * Qual grupo recebe o aviso de venda, ou null (aí vai para o privado).
- *
- * Ordem: o que o dono registrou com #staff dentro do grupo > VENDAS_GRUPO_JID
- * > o grupo com o nome "Phaze Games - STAFF" (achado pela Evolution, guardado
- * 10 min). '#staff off' desliga tudo isso e volta ao privado.
+ * Acha o grupo pelo nome. Primeiro a comparação nova (exata, tolerante a
+ * traço/caixa/acento); se nada bater, a regra antiga. Em cada etapa, vários
+ * iguais: descarta comunidade e, se ainda sobrar mais de um, não chuta.
+ * @returns {{jid:string|null, motivo:string, candidatos:object[]}}
  */
-async function grupoDeVendas() {
-  const estado = require('./ponte/estado').dados;
-  const salvo = estado.grupoVendas;
-  if (salvo === 'off') return null;
-  if (salvo) return salvo;
-  if (process.env.VENDAS_GRUPO_JID) return process.env.VENDAS_GRUPO_JID.trim();
+function acharGrupoPorNome(grupos, nome = NOME_GRUPO_STAFF) {
+  for (const norm of [normNome, normNomeAntigo]) {
+    const alvo = norm(nome);
+    const iguais = grupos.filter((g) => norm(g.nome) === alvo);
+    if (!iguais.length) continue;
+    if (iguais.length === 1) {
+      return iguais[0].comunidade
+        ? { jid: null, motivo: 'so_comunidade', candidatos: iguais }
+        : { jid: iguais[0].id, motivo: 'ok', candidatos: iguais };
+    }
+    const normais = iguais.filter((g) => !g.comunidade);
+    if (normais.length === 1) return { jid: normais[0].id, motivo: 'ok', candidatos: iguais };
+    return { jid: null, motivo: 'ambiguo', candidatos: iguais };
+  }
+  return { jid: null, motivo: 'nenhum', candidatos: [] };
+}
 
+/** De onde vem o destino atual: 'registrado', 'env', 'nome', 'off' ou 'nenhum'. */
+async function destinoDeVendas() {
+  const salvo = require('./ponte/estado').dados.grupoVendas;
+  if (salvo === 'off') return { jid: null, origem: 'off' };
+  if (salvo) return { jid: salvo, origem: 'registrado' };
+  if (process.env.VENDAS_GRUPO_JID) return { jid: process.env.VENDAS_GRUPO_JID.trim(), origem: 'env' };
   const config = require('./config');
-  if (!config.evolution?.apiKey) return null;
-  if (Date.now() - cacheGrupo.em < CACHE_GRUPO_MS) return cacheGrupo.jid;
+  if (!config.evolution?.apiKey) return { jid: null, origem: 'nenhum' };
+  if (Date.now() - cacheGrupo.em < CACHE_GRUPO_MS) return { jid: cacheGrupo.jid, origem: cacheGrupo.jid ? 'nome' : 'nenhum' };
   let jid = null;
   try {
-    const grupos = await require('./evolution').fetchAllGroups();
-    const alvo = normNome(NOME_GRUPO_STAFF);
-    jid = grupos.find((g) => normNome(g.subject || g.name) === alvo)?.id || null;
+    const r = acharGrupoPorNome(await listarGrupos());
+    jid = r.jid;
+    if (!jid && r.motivo !== 'nenhum') console.warn(`[vendas] grupo "${NOME_GRUPO_STAFF}" não escolhido (${r.motivo}): ${r.candidatos.map((c) => c.id).join(', ')}`);
   } catch (err) {
     console.warn('[vendas] não consegui listar os grupos:', err.message);
   }
   cacheGrupo = { jid, em: Date.now() };
-  return jid;
+  return { jid, origem: jid ? 'nome' : 'nenhum' };
+}
+
+/**
+ * Qual grupo recebe o aviso de venda, ou null (aí vai para o privado).
+ *
+ * Ordem: o que o dono registrou com #staff > VENDAS_GRUPO_JID > o grupo de
+ * nome "Phaze Games - STAFF" (achado pela Evolution, guardado 10 min).
+ * '#staff off' desliga tudo isso e volta ao privado.
+ */
+async function grupoDeVendas() {
+  return (await destinoDeVendas()).jid;
 }
 
 /** Registra (ou limpa) o grupo da equipe. 'off' desliga; null volta ao automático. */
@@ -820,6 +878,12 @@ module.exports = {
   paraWhatsApp,
   grupoDeVendas,
   definirGrupoVendas,
+  destinoDeVendas,
+  listarGrupos,
+  ultimaListaGrupos,
+  nomeDoGrupo,
+  acharGrupoPorNome,
+  normNome,
   NOME_GRUPO_STAFF,
   /** Quando chegou o último evento da loja. 0 = nunca chegou nenhum. */
   ultimoEventoEm: () => dados.ultimoEventoEm || 0,

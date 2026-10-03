@@ -1179,13 +1179,14 @@ async function onNerixEvent(event) {
  * candidatos de quem mandou. Qualquer outra mensagem de grupo, ou #staff de
  * quem não é operador, é ignorada em silêncio.
  *
- * @param {{grupo:string, remetentes:string[], texto:string}} p
+ * @param {{grupo:string, remetentes:string[], texto:string, doBot?:boolean}} p
  * @returns {Promise<boolean>} true se tratou
  */
-async function onGrupoComando({ grupo, remetentes = [], texto }) {
+async function onGrupoComando({ grupo, remetentes = [], texto, doBot = false }) {
   if (!/^#staff\b/i.test(String(texto || '').trim())) return false;
   const cfgOp = require('./ponte/config').operador;
-  const quem = remetentes.filter(Boolean).find((r) => cfgOp.ehOperador(r));
+  // doBot: a mensagem saiu da PRÓPRIA conta do bot (fromMe) — quem digita é o dono.
+  const quem = doBot ? 'dono' : remetentes.filter(Boolean).find((r) => cfgOp.ehOperador(r));
   if (!quem) {
     console.warn(`[grupo] #staff em ${grupo} de ${remetentes.filter(Boolean).join('/') || '?'} — não é operador, ignorei`);
     return false;

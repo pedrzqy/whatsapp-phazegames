@@ -46,7 +46,17 @@ app.post('/webhooks/evolution', async (req, res) => {
         data.message?.conversation ||
         data.message?.extendedTextMessage?.text ||
         '';
-      if (txt && !/@g\.us$|@broadcast$|@newsletter$/i.test(jid) && !sender.foiDoBot(txt)) {
+      // #staff digitado no grupo pelo dono (WhatsApp Web logado COMO o número
+      // do bot): chega fromMe. O dono da conta é operador por definição.
+      if (txt && /@g\.us$/i.test(jid)) {
+        if (/^#staff\b/i.test(txt.trim()) && !sender.foiDoBot(txt)) {
+          await handlers
+            .onGrupoComando({ grupo: jid, remetentes: [], texto: txt, doBot: true })
+            .catch((err) => console.error('[webhooks/evolution] onGrupoComando:', err.message));
+        }
+        return;
+      }
+      if (txt && !/@broadcast$|@newsletter$/i.test(jid) && !sender.foiDoBot(txt)) {
         await handlers.onOperadorDigitou({ para: jid, texto: txt }).catch((err) => {
           console.error('[webhooks/evolution] onOperadorDigitou:', err.message);
         });
@@ -103,7 +113,7 @@ app.post('/webhooks/evolution', async (req, res) => {
         await handlers
           .onGrupoComando({
             grupo: remoteJid,
-            remetentes: [key.participant, key.participantAlt, data.participant, data.senderPn],
+            remetentes: [key.participant, key.participantAlt, key.participantPn, data.participant, data.participantPn, data.senderPn],
             texto: text,
           })
           .catch((err) => console.error('[webhooks/evolution] onGrupoComando:', err.message));
