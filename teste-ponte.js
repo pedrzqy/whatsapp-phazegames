@@ -318,7 +318,7 @@ const CLI4 = '5541966661111';
 r2 = recepcao.avaliar(CLI4, 'preciso do código', null);
 t('"preciso do código" responde', r2.acao === 'responder', r2.acao);
 t('pede a FOTO primeiro', /foto da tela do console/i.test(r2.mensagem || ''), r2.mensagem);
-t('não pede o usuário ainda', !/login\/usu/i.test(r2.mensagem || ''));
+t('não pede o usuário ainda', !/do lado da 🔑/.test(r2.mensagem || ''));
 // A FOTO DE EXEMPLO vai junto. "Manda a foto da tela do console" é claro para
 // quem já sabe qual tela é; para o resto vem a caixa do jogo, a tela inicial ou
 // o menu de contas, e o pedido volta pela metade.
@@ -332,12 +332,12 @@ t('  e o horário não aparece dentro do expediente',
 
 r2 = recepcao.avaliar(CLI4, '', 'tela.jpg');
 t('a foto agora tem resposta', r2.acao === 'responder', r2.acao);
-t('e pede o login/usuário', /login\/usu/i.test(r2.mensagem || ''), r2.mensagem);
+t('e pede o login/usuário', /do lado da 🔑/.test(r2.mensagem || ''), r2.mensagem);
 t('avisa para não mandar senha', /senha/i.test(r2.mensagem || ''));
 // Agora a imagem muda com a etapa: no login vale a que mostra QUAL login é o
 // certo, porque quem comprou várias vezes tem vários e manda o último.
 t('  e agora a imagem é a do login', r2.exemplo === 'login', String(r2.exemplo));
-t('  dizendo que é o PRIMEIRO login', /primeiro login/i.test(r2.mensagem || ''), r2.mensagem);
+t('  dizendo que não é a senha', /sem a senha/i.test(r2.mensagem || ''), r2.mensagem);
 
 r2 = recepcao.avaliar(CLI4, 'rsd32', null);
 t('o usuário fecha o fluxo', r2.acao === 'pedir', r2.acao);
@@ -361,7 +361,7 @@ t('  e a imagem junto', pelaOpcao.exemplo === 'console', String(pelaOpcao.exempl
 // passo 1, senão o menu abriria um fluxo que não continua.
 const depoisDoMenu = recepcao.avaliar(CLI_MENU, '', 'tela-menu.jpg');
 t('  e a foto seguinte entra no fluxo', depoisDoMenu.acao === 'responder', depoisDoMenu.acao);
-t('  pedindo o login', /login\/usu/i.test(depoisDoMenu.mensagem || ''), depoisDoMenu.mensagem);
+t('  pedindo o login', /do lado da 🔑/.test(depoisDoMenu.mensagem || ''), depoisDoMenu.mensagem);
 
 // ── Fila ocupada trava na ENTRADA ──────────────────────────
 //
@@ -471,7 +471,7 @@ recepcao.avaliar(CLI7, 'preciso do codigo', null);
 recepcao.avaliar(CLI7, '', 'tela3.jpg');
 r2 = recepcao.avaliar(CLI7, 'meu email', null);
 t('explica o formato', r2.acao === 'responder', r2.acao);
-t('dá exemplo de usuário', /rrrtsr223/.test(r2.mensagem || ''));
+t('explica onde achar o login', /do lado da 🔑/.test(r2.mensagem || ''));
 
 // ── "preciso do código" SEMPRE recomeça do passo 1 ─────────
 //
@@ -491,7 +491,7 @@ const CLI8 = '5541966666666';
 t('foto solta segue calada', recepcao.avaliar(CLI8, '', 'tela4.jpg').acao === 'ignorar');
 r2 = recepcao.avaliar(CLI8, 'preciso do codigo', null);
 t('o pedido volta a pedir a FOTO', /foto da tela do console/i.test(r2.mensagem || ''), r2.mensagem);
-t('  e NÃO pula para o login', !/login\/usu/i.test(r2.mensagem || ''));
+t('  e NÃO pula para o login', !/do lado da 🔑/.test(r2.mensagem || ''));
 t('  com a imagem de exemplo junto', r2.exemplo === 'console', String(r2.exemplo));
 
 // A foto velha tem que sumir, e não só ser ignorada: deixada ali, o usuário
@@ -504,7 +504,7 @@ t('  ele pede o print de novo', /print da tela|foto da tela/i.test(r2.mensagem |
 const CLI8B = '5541966665555';
 recepcao.avaliar(CLI8B, 'preciso do codigo', null);
 r2 = recepcao.avaliar(CLI8B, '', 'tela-nova.jpg');
-t('a foto NOVA avança para o login', /login\/usu/i.test(r2.mensagem || ''), r2.mensagem);
+t('a foto NOVA avança para o login', /do lado da 🔑/.test(r2.mensagem || ''), r2.mensagem);
 r2 = recepcao.avaliar(CLI8B, 'rrtt9321', null);
 t('  e o fluxo fecha com a foto certa', r2.acao === 'pedir' && r2.imagem === 'tela-nova.jpg',
   `${r2.acao} / ${r2.imagem}`);

@@ -181,13 +181,13 @@ const msgEspera = (aFrente) =>
 // outra conta, e o erro só aparece na tela do cliente lá na frente.
 const MSG_PEDE_USUARIO =
   'Foto recebida ✅\n\n' +
-  '2️⃣ Agora o *login/usuário* da conta — só o usuário, *nunca a senha*.\n\n' +
-  'É *sempre o PRIMEIRO login* que você recebeu da gente, igual à imagem.';
+  '2️⃣ Agora digita o *login* da conta que você colocou no seu *Nintendo Switch*.\n\n' +
+  'É o *primeiro login* da mensagem de entrega que a gente te mandou (normalmente do lado da 🔑 ou de *Login:*), igual na imagem 👆\n\n' +
+  'Só o login, *sem a senha*.';
 
 const MSG_USUARIO_INVALIDO =
-  'Não entendi o usuário 🤔\n\n' +
-  'Manda ele *sozinho*, sem mais nada junto, tipo: `rrrtsr223`\n\n' +
-  'É o *PRIMEIRO login* que você recebeu, igual à imagem.';
+  'Não entendi o login 🤔\n\n' +
+  'Manda *só o login* da conta que você colocou no seu *Nintendo Switch*: o *primeiro login* da mensagem de entrega, do lado da 🔑 ou de *Login:* 👆';
 
 /** Qual imagem acompanha cada instrução. Nome, não bytes: quem lê o disco é o handlers. */
 const EXEMPLO_DO_AVISO = {
