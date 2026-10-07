@@ -70,6 +70,8 @@ router.get('/estado', (_req, res) => {
     chatTitulo: cfg.vendedor.chatTitulo,
     // Só faz sentido ler o chat se alguém está esperando resposta.
     temAtendimentoAtivo: Boolean(fila.ativo()),
+    // De QUEM é a vez. O braço só lê com a marca desse mesmo atendimento.
+    atendimentoAtivoId: fila.ativo()?.id || null,
     // Código SMS que o operador mandou com #taobao, aguardando o braço usar.
     smsTaobao: dados.smsTaobao?.codigo || null,
     // O operador pediu para recarregar a tela agora (#recarregar).
@@ -242,7 +244,11 @@ router.post('/entrada', async (req, res) => {
     const texto = String(m?.texto || '').trim();
     if (!texto) continue;
     try {
-      await ponte.receberDoFornecedor({ texto, printPath: m.printPath });
+      await ponte.receberDoFornecedor({
+        texto,
+        printPath: m.printPath,
+        atendimentoId: req.body?.atendimentoId || null,
+      });
     } catch (err) {
       console.error('[ponte/braco] falha ao processar entrada:', err.message);
     }

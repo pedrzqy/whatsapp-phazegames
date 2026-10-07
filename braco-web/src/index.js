@@ -389,8 +389,20 @@ async function executarResposta(chat, tarefa, titulo) {
   return marca;
 }
 
-async function lerRespostas(chat, marca) {
-  const novas = await chat.lerNovas(marca);
+/**
+ * `vistas`: o que já foi reportado com esta marca. Um balão não é reportado
+ * duas vezes mesmo que a leitura o devolva de novo (janela do DOM, releitura).
+ */
+async function lerRespostas(chat, marca, atendimentoId = null, vistas = new Set()) {
+  const todas = await chat.lerNovas(marca);
+  const novas = todas.filter((m) => {
+    const texto = String(m?.texto || '').replace(/[\u200B-\u200F\u2060\uFEFF\u00A0]/g, ' ').trim();
+    if (!texto) return false;
+    const chave = `${m.quando || ''}|${texto}`;
+    if (vistas.has(chave)) return false;
+    vistas.add(chave);
+    return true;
+  });
   if (!novas.length) return false;
 
   await evento(
@@ -398,7 +410,11 @@ async function lerRespostas(chat, marca) {
     'resposta',
     `${novas.length} nova(s): ${novas.map((m) => JSON.stringify(m.texto)).join(', ')}`,
   );
-  await api.post('/entrada', { mensagens: novas.map((m) => ({ texto: m.texto })) });
+  await api.post('/entrada', {
+    // A marca pertence a ESTE atendimento; o bot descarta se a vez já mudou.
+    atendimentoId,
+    mensagens: novas.map((m) => ({ texto: m.texto })),
+  });
   return true;
 }
 
@@ -468,6 +484,9 @@ async function main() {
 
   // Marca do atendimento em curso. null = ninguém esperando resposta.
   let marcaAtual = null;
+  // De quem é a marca acima, e o que já foi reportado com ela.
+  let marcaDe = null;
+  let vistasDaMarca = new Set();
   // Conversa do fornecedor está aberta na tela? Volta a false quando algo dá
   // errado, para o próximo ciclo reabrir em vez de escrever no vazio.
   let conversaAberta = false;
@@ -832,6 +851,8 @@ async function main() {
       }
       if (resp.status === 200) {
         marcaAtual = await executarTarefa(chat, resp.data, titulo);
+        marcaDe = resp.data.atendimentoId || null;
+        vistasDaMarca = new Set();
         await dormir(humaniza.pausaLonga());
         continue;
       }
@@ -843,8 +864,17 @@ async function main() {
       // regular na tela — exatamente o padrão que a Taobao usa para separar
       // script de gente. Ler é só varrer o DOM: não gera clique nem requisição,
       // então pode ser frequente sem custo nenhum.
-      if (st.temAtendimentoAtivo && esperando) {
-        const achou = await lerRespostas(chat, marcaAtual);
+      //
+      // MARCA VENCIDA: foi tirada no envio de OUTRO atendimento (a vez já passou
+      // para outro cliente). Ler com ela entregaria ao da vez a resposta
+      // atrasada do anterior — código na conta errada — e é o que despejava a
+      // rajada de "sem ninguém na vez". Descarta: o próximo envio tira marca nova.
+      if (esperando && st.atendimentoAtivoId && marcaDe && st.atendimentoAtivoId !== marcaDe) {
+        console.warn(`[braço] marca de ${marcaDe} vencida (vez de ${st.atendimentoAtivoId}) — descartada`);
+        marcaAtual = null;
+        marcaDe = null;
+      } else if (st.temAtendimentoAtivo && esperando) {
+        const achou = await lerRespostas(chat, marcaAtual, marcaDe, vistasDaMarca);
         if (achou) marcaAtual = null; // vez encerrada; o bot promove o próximo
       }
 
@@ -911,4 +941,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { executarTarefa, executarResposta };
+module.exports = { executarTarefa, executarResposta, lerRespostas };

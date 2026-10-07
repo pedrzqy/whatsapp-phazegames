@@ -447,6 +447,46 @@ async function alertarHandoff({ nome, from, motivo, contato }) {
 // SENTIDO 2 — fornecedor responde
 // ============================================================
 
+// Mensagens sem dono: juntadas num aviso só. Uma rajada (releitura de histórico,
+// respostas atrasadas de vários pedidos) virava um alerta por item no WhatsApp.
+let orfas = [];
+let orfasTimer = null;
+const ORFAS_JANELA_MS = 8000;
+
+function ehNossoTexto(texto) {
+  const t = String(texto).trim().toLowerCase();
+  const nossos = [
+    ...dados.atendimentos.map((a) => a.usuario),
+    ...dados.tarefas.map((x) => x.usuario),
+  ];
+  return nossos.some((u) => u && String(u).trim().toLowerCase() === t);
+}
+
+function orfaAvisar(texto) {
+  // O login que NÓS mandamos relido como se fosse dele: não é resposta.
+  if (ehNossoTexto(texto)) {
+    console.log(`[ponte] órfã ignorada (é o usuário que nós mandamos): ${texto.slice(0, 40)}`);
+    return;
+  }
+  if (!orfas.includes(texto)) orfas.push(texto);
+  if (orfasTimer) return;
+  orfasTimer = setTimeout(descarregarOrfas, ORFAS_JANELA_MS);
+  if (orfasTimer.unref) orfasTimer.unref();
+}
+
+async function descarregarOrfas() {
+  const lista = orfas;
+  orfas = [];
+  orfasTimer = null;
+  if (!lista.length) return;
+  const itens = lista.slice(0, 15).map((x) => `• "${x.slice(0, 80)}"`).join('\n');
+  await alertar(
+    `📨 Fornecedor mandou ${lista.length} mensagem(ns) sem ninguém na vez:\n\n${itens}` +
+      (lista.length > 15 ? `\n… e mais ${lista.length - 15}` : '') +
+      `\n\nProvavelmente respostas atrasadas. Não entreguei a ninguém — confere se algum cliente ainda espera código.`,
+  );
+}
+
 /**
  * Chamado pelo braço com uma mensagem NOVA do fornecedor.
  *
@@ -455,12 +495,23 @@ async function alertarHandoff({ nome, from, motivo, contato }) {
  * virariam centenas de "códigos novos" na primeira execução.
  */
 async function receberDoFornecedor(entrada) {
+  // Texto só com caractere invisível (zero-width, espaço especial) aparecia no
+  // alerta como "" — e não é mensagem de ninguém.
+  entrada = {
+    ...entrada,
+    texto: String(entrada?.texto || '').replace(/[​-‏⁠﻿ ]/g, ' ').trim(),
+  };
+  if (!entrada.texto) return;
+
   const at = fila.ativo();
-  if (!at) {
-    await alertar(
-      `📨 Fornecedor mandou algo sem ninguém na vez:\n\n"${entrada.texto}"\n\n` +
-        `Provavelmente resposta atrasada. Não entreguei a ninguém.`,
-    );
+
+  // A leitura do braço é amarrada a UM atendimento (a marca foi tirada no envio
+  // dele). Se a vez já é de outro, esta mensagem é a resposta atrasada do
+  // anterior: entregá-la ao da vez daria o código na conta errada.
+  const vencida = Boolean(at && entrada.atendimentoId && entrada.atendimentoId !== at.id);
+
+  if (!at || vencida) {
+    orfaAvisar(entrada.texto);
     return;
   }
 
@@ -1614,6 +1665,7 @@ module.exports = {
   atendimentoLigado,
   pedirCodigo,
   receberDoFornecedor,
+  descarregarOrfas,
   entregarCodigo,
   proximaTarefa,
   devolverTarefa,

@@ -624,6 +624,13 @@ class Chat {
     let ms;
     try {
       ms = await this._lerFornecedor();
+      // Lista vazia logo depois de recarregar quase sempre é tela ainda
+      // montando, não conversa sem mensagens. Marca vazia faz TODO o histórico
+      // virar "resposta nova" — relê antes de aceitar.
+      for (let i = 0; i < 2 && !ms.length; i++) {
+        await this.pagina.waitForTimeout(1500).catch(() => {});
+        ms = await this._lerFornecedor();
+      }
     } catch (err) {
       // Marca que NÃO PÔDE ser tirada não é marca vazia. O `.catch(() => [])`
       // daqui tratava as duas igual, e aí lerNovas() enxergava um chat zerado:
@@ -636,6 +643,11 @@ class Chat {
     }
 
     const ate = ms.map((m) => m.quando).filter(Boolean).sort().pop() || '';
+    // Sem nenhum horário não há corte: marca inútil, não "chat vazio".
+    if (!ate) {
+      console.warn('[chat] marca sem horário nenhum — não confiável');
+      return { chaves: ms.map((m) => m.chave), ate: '', confiavel: false };
+    }
     return { chaves: ms.map((m) => m.chave), ate, confiavel: true };
   }
 
@@ -1437,7 +1449,7 @@ class Chat {
       // O horário manda. Mensagem sem data não é aceita: pode ser histórico
       // que entrou no DOM por rolagem, e entregar código velho ao cliente é
       // pior do que não entregar nada — o que já tem timeout e alerta.
-      if (ate && (!m.quando || m.quando <= ate)) {
+      if (!m.quando || (ate && m.quando <= ate)) {
         antigas++;
         continue;
       }

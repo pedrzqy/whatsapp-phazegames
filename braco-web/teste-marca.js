@@ -142,6 +142,21 @@ function chatFalso(mensagens) {
   const legada = await chatFalso(antes).lerNovas(antes.map((m) => m.chave));
   t('marca legada (array) ainda funciona', legada.length === 0);
 
+  console.log('\n--- marca sem horario / resposta sem horario ---');
+
+  const cVazio = chatFalso([]);
+  cVazio.pagina = { waitForTimeout: async () => {} };
+  const mVazia = await cVazio.marca();
+  t('chat vazio na hora da marca NAO e confiavel', mVazia.confiavel === false);
+  const mSemHora = await chatFalso([msg('', 'xx')]).marca();
+  t('marca sem nenhum horario NAO e confiavel', mSemHora.confiavel === false);
+  const semHora = await chatFalso([msg('', '999999')]).lerNovas({
+    chaves: [],
+    ate: '2026-08-15 10:00:00',
+    confiavel: true,
+  });
+  t('mensagem sem horario nunca e resposta', semHora.length === 0);
+
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos passaram'));
   process.exit(falhas ? 1 : 0);
 })();

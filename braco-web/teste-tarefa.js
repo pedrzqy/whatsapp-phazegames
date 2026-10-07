@@ -27,7 +27,7 @@ axios.create = () => ({
   get: async () => ({ data: {} }),
 });
 
-const { executarTarefa } = require('./src/index');
+const { executarTarefa, lerRespostas } = require('./src/index');
 axios.create = criarReal;
 
 let falhas = 0;
@@ -119,6 +119,24 @@ function chatFalso() {
   await executarTarefa(chat5, { id: '5', tipo: 'algo_que_nao_existe', usuario: 'zzz1111', tentativa: 1 }, 'x');
   t('tipo desconhecido não some em silêncio',
     chat5.feito.some((f) => f.startsWith('enviarTexto')), chat5.feito.join(' → '));
+
+  // lerRespostas: amarra ao atendimento, ignora vazio e nao reporta duas vezes.
+  {
+    reportado.length = 0;
+    const vistas = new Set();
+    const novas = [
+      { texto: '936818', quando: '2026-10-07 20:28:01' },
+      { texto: '​', quando: '2026-10-07 20:28:02' },
+      { texto: '   ', quando: '2026-10-07 20:28:03' },
+    ];
+    const chatR = { lerNovas: async () => novas };
+    const achou1 = await lerRespostas(chatR, {}, 'at-7', vistas);
+    const entrada1 = reportado.filter((r) => r.url === '/entrada');
+    t('reporta so o texto real', achou1 && entrada1.length === 1 && entrada1[0].corpo.mensagens.length === 1);
+    t('  com o atendimento a que a marca pertence', entrada1[0]?.corpo.atendimentoId === 'at-7');
+    const achou2 = await lerRespostas(chatR, {}, 'at-7', vistas);
+    t('o mesmo balao nao e reportado de novo', !achou2 && reportado.filter((r) => r.url === '/entrada').length === 1);
+  }
 
   console.log('');
   if (falhas) {

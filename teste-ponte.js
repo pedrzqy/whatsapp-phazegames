@@ -3710,6 +3710,49 @@ const OP = '5541999999999';
     );
   }
 
+  // ── Rajada sem ninguém na vez: um alerta só, sem eco nem vazio ──
+  {
+    console.log('\n--- orfas agregadas ---');
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.tarefas = [];
+    estadoPonte.dados.atendimentos.push({ id: 'velho', estado: 'concluido', usuario: 'ttxx7887' });
+    const senderO = require('./src/sender');
+    const antesO = senderO.send;
+    const outO = [];
+    senderO.send = async (para, txt) => { outO.push({ para, texto: String(txt) }); };
+    try {
+      for (const x of ['936818', 'ttxx7887', '​', '', '213029', '936818']) {
+        await ponteMod.receberDoFornecedor({ texto: x });
+      }
+      await ponteMod.descarregarOrfas();
+    } finally {
+      senderO.send = antesO;
+    }
+    const ao = outO.filter((s) => s.para === OP);
+    t('rajada vira UM alerta so', ao.length === 1, String(ao.length));
+    t('  lista os dois codigos', /936818/.test(ao[0]?.texto || '') && /213029/.test(ao[0]?.texto || ''));
+    t('  nao repete o mesmo texto', ((ao[0]?.texto || '').match(/936818/g) || []).length === 1);
+    t('  nao lista o login que nos mandamos', !/ttxx7887/.test(ao[0]?.texto || ''));
+    t('  nao ha alerta de vazio', !/""/.test(ao[0]?.texto || ''));
+
+    // Marca de outro atendimento: nao entrega ao da vez.
+    estadoPonte.dados.atendimentos = [];
+    const rO = await filaMod.entrar('5541922220077', 'Caio');
+    rO.atendimento.usuario = 'zzzz1111';
+    const saiuO = [];
+    senderO.send = async (para, txt) => { saiuO.push({ para, texto: String(txt) }); };
+    try {
+      await ponteMod.receberDoFornecedor({ texto: '555444', atendimentoId: 'outro-atendimento' });
+      await ponteMod.descarregarOrfas();
+    } finally {
+      senderO.send = antesO;
+    }
+    t('codigo com marca de OUTRO atendimento nao vai ao cliente da vez',
+      !saiuO.some((s) => s.para === '5541922220077'));
+    t('  e continua na vez', filaMod.ativo() && filaMod.ativo().from === '5541922220077');
+    t('  operador e avisado', saiuO.some((s) => s.para === OP && /555444/.test(s.texto)));
+  }
+
   evolutionMod.estadoInstancia = estadoReal;
   nerixMod.getStore = lojaReal;
 
