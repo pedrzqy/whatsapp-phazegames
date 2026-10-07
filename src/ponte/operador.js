@@ -650,7 +650,11 @@ async function executar(texto, de = '', ctx = {}) {
     const d = limites.disjuntor();
     if (d.estado === 'aberto') {
       linhas.push('🛑 Envios *congelados*');
-      problemas.push('Apareceu verificação na tela. Resolve e responde *#liberar*.');
+      problemas.push(
+        d.automatico
+          ? 'Falhas seguidas. Tento voltar sozinho; se já resolveu, responde *#liberar*.'
+          : 'Apareceu verificação na tela. Resolve e responde *#liberar*.',
+      );
     } else {
       linhas.push('✅ Envios operando');
     }
@@ -793,7 +797,10 @@ async function executar(texto, de = '', ctx = {}) {
       // sai, para sempre, até alguém mandar #liberar: essa é a informação que
       // precisa estar na linha.
       d.estado === 'aberto'
-        ? `🛑 *CONGELADA* — ${politica.motivoNeutro(d.motivo)}\n   Responde *#liberar* para voltar a operar.`
+        ? `🛑 *CONGELADA* — ${politica.motivoNeutro(d.motivo)}\n` +
+          (d.automatico && d.proximaSondaEm
+            ? `   Tento voltar sozinho em ${Math.max(0, Math.ceil((d.proximaSondaEm - Date.now()) / 60000))} min. Ou responde *#liberar*.`
+            : '   Responde *#liberar* para voltar a operar.')
         : '✅ operando',
       janela.resumo(),
       `Cota: ${lim.hora.usado}/${lim.hora.teto} nesta hora · ${lim.dia.usado}/${lim.dia.teto} hoje`,

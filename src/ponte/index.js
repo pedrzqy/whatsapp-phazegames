@@ -92,29 +92,12 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
     return { aceito: false, mensagem: 'O sistema de código está em manutenção. Já te aviso 🙏' };
   }
 
-  const d = limites.disjuntor();
-  if (d.estado === 'aberto') {
-    // O alerta tem que trazer a AÇÃO, não só o aviso. Sem o comando junto, o
-    // aviso chega, o operador vê "fila parada" e o pedido fica parado enquanto
-    // ele procura qual dos comandos destrava.
-    await alertar(
-      `⚠️ *${nome}* pediu código com os envios congelados.\n\n` +
-        `A fila está parada e o pedido dele NÃO entrou.\n` +
-        `Responde *#liberar* para destravar — depois peça para ele mandar de novo.`,
-    );
-    return {
-      aceito: false,
-      // Não admite defeito. "Estou resolvendo uma coisa aqui no sistema" é
-      // irmã do "Deu um problema aqui no sistema" que já saiu daqui: numa
-      // conversa de compra, admitir problema derruba a confiança e leva a
-      // venda junto. O cliente acabou de mandar foto e usuário, então algum
-      // retorno ele precisa — só que neutro, de espera, não de falha.
-      // Mesma frase do pedido que espera aprovação, e pelo mesmo motivo: aqui
-      // o pedido NÃO entrou (a fila está parada), então prometer que já está
-      // pegando é prometer o que não começou.
-      mensagem: 'Recebi tudo ✅ Já te retorno com o código 👍',
-    };
-  }
+  // Congelado NÃO rejeita: o pedido entra na fila normalmente e fica parado
+  // até os envios voltarem (sozinhos ou pelo #liberar). Rejeitar era o pior
+  // dos mundos: o cliente ouvia "já te retorno" por um pedido que não existia,
+  // o operador recebia um alerta por mensagem, e na volta ninguém lembrava de
+  // quem tinha pedido. Aqui só se avisa o cliente, uma vez (respostaCongelada).
+  const congelado = limites.disjuntor().estado === 'aberto';
 
   // Valida ANTES de gastar cota e ocupar a fila serial. Se o cliente mandou o
   // usuário dentro de uma frase, tenta extrair; se ficar ambíguo, pergunta em
@@ -153,6 +136,7 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
   persistAgora();
 
   if (!ativo) {
+    if (congelado) return { aceito: true, mensagem: respostaCongelada(atendimento) };
     // Assinada: fecha uma etapa (o cliente vai esperar), e é uma das que ele
     // relê enquanto aguarda.
     return {
@@ -165,6 +149,8 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
   }
 
   const tarefa = await despachar(atendimento);
+
+  if (congelado) return { aceito: true, mensagem: respostaCongelada(atendimento) };
 
   // No copiloto NADA foi mandado ainda — a tarefa está parada esperando o #ok.
   // Dizer "já estou pegando seu código" aqui é prometer uma ação que só
@@ -197,6 +183,23 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
   // mensagem, uma delas dentro do itálico.
   const j = janela.estado();
   return { aceito: true, mensagem: j.aberta ? j.avisoCliente : marca.assinar(j.avisoCliente) };
+}
+
+/** Primeira vez que o cliente fala com os envios congelados: avisa com calma. */
+const MSG_INSTABILIDADE =
+  'Estamos com uma instabilidade por aqui, mas você continua na fila e eu te chamo ' +
+  'assim que voltar 🙏';
+
+/**
+ * O que dizer ao cliente que pediu código com os envios congelados.
+ * A frase de instabilidade sai UMA vez por atendimento; as mensagens seguintes
+ * dele recebem o retorno neutro de sempre, sem repetir a explicação.
+ */
+function respostaCongelada(atendimento) {
+  if (atendimento.avisoCongelado) return 'Recebi tudo ✅ Já te retorno com o código 👍';
+  atendimento.avisoCongelado = true;
+  persistAgora();
+  return MSG_INSTABILIDADE;
 }
 
 /**
@@ -1116,6 +1119,38 @@ async function resultadoTarefa(id, ok, erro, printPath, fatal = false) {
     return { ok: true };
   }
 
+  // ── Falha que NÃO é do sistema ────────────────────────────
+  //
+  // Teto de envios por hora do braço: é cota, não defeito. Contar como falha
+  // congelou tudo num pico (o 11º pedido da hora batia no teto, voltava à fila
+  // e falhava de novo até somar três). Aqui o envio só é adiado até a cota
+  // liberar, sem gastar tentativa e sem tocar no disjuntor.
+  const teto = /teto local.*?libera em (\d+)s/i.exec(String(erro || ''));
+  if (teto) {
+    const seg = Math.max(30, Number(teto[1]) || 300) + 15;
+    t.estado = 'pendente';
+    t.tentativas = Math.max(0, t.tentativas - 1);
+    t.agendadaPara = Date.now() + seg * 1000;
+    // Esperar a cota não é cliente sem resposta: empurra o prazo dele.
+    const atTeto = fila.porId(t.atendimentoId);
+    if (atTeto) {
+      atTeto.expiraEm = Math.max(atTeto.expiraEm || 0, t.agendadaPara + cfg.fila.timeoutMinutos * 60 * 1000);
+    }
+    persistAgora();
+    console.warn(`[ponte] tarefa ${id} adiada ${seg}s: cota por hora do braço esgotada`);
+    // Um aviso por meia hora, não um por tentativa.
+    if (Date.now() - (dados.avisoTetoEm || 0) > 30 * 60 * 1000) {
+      dados.avisoTetoEm = Date.now();
+      persistAgora();
+      await alertar(
+        '⏳ *Cota de envios da hora esgotada.*\n\n' +
+          `Os pedidos continuam na fila e saem sozinhos em cerca de ${Math.ceil(seg / 60)} min. ` +
+          'Nada foi perdido nem congelado.',
+      );
+    }
+    return { ok: true, adiado: true };
+  }
+
   const desistir = fatal || t.tentativas >= 3;
   t.estado = desistir ? 'falhou' : 'pendente';
   t.ultimoErro = erro || 'sem detalhe';
@@ -1126,13 +1161,14 @@ async function resultadoTarefa(id, ok, erro, printPath, fatal = false) {
   if (erro) console.error(`[ponte] tarefa ${id} falhou:`, erro);
   const motivo = politica.motivoNeutro(erro);
 
-  const { abriu } = limites.registrarFalha(erro || 'falha no envio', printPath);
+  // Texto vazio é defeito do PEDIDO (nada a digitar), não do sistema: não conta
+  // para o congelamento.
+  const doPedido = /resposta vazia/i.test(String(erro || ''));
+  const { abriu, reabriu } = doPedido
+    ? { abriu: false, reabriu: false }
+    : limites.registrarFalha(erro || 'falha no envio', printPath, t.atendimentoId);
   if (abriu) {
-    await alertar(
-      `🛑 *Envios congelados*\n\nFalhou várias vezes seguidas.\n` +
-        `Motivo: ${motivo}\n\nVê o que houve e responde *#liberar*.`,
-      printPath,
-    );
+    await avisarCongelamento({ motivo, printPath, reabriu });
   } else if (desistir) {
     // O cliente NÃO recebe aviso de falha. Ele não tem o que fazer com essa
     // informação, e "deu problema no sistema" numa conversa de compra derruba
@@ -1149,6 +1185,91 @@ async function resultadoTarefa(id, ok, erro, printPath, fatal = false) {
   }
 
   return { ok: true, desistiu: desistir };
+}
+
+/** Quantos clientes estão parados esperando (na vez + na fila). */
+function clientesParados() {
+  const s = fila.situacao();
+  return s.aguardando.length + (s.ativo ? 1 : 0);
+}
+
+/**
+ * Alerta do congelamento por falhas seguidas. UM por congelamento: reabrir logo
+ * depois de uma volta só avisa de novo se o último aviso tem mais de 30 min.
+ */
+async function avisarCongelamento({ motivo, printPath, reabriu = false }) {
+  const d = limites.disjuntor();
+  const agora = Date.now();
+  const recente = d.ultimoAvisoEm && agora - d.ultimoAvisoEm < 30 * 60 * 1000;
+  if (reabriu && recente) return;
+  d.ultimoAvisoEm = agora;
+  persistAgora();
+
+  const n = clientesParados();
+  const volta = d.automatico
+    ? `Os ${n} cliente(s) continuam na fila e nada se perde. Vou tentar voltar sozinho em ` +
+      `${Math.round((d.proximaSondaEm - agora) / 60000)} min, e insisto com espera maior se não der.\n\n` +
+      `Se já resolveu por aí, responde *#liberar* para voltar agora.`
+    : 'Vê o que houve e responde *#liberar*.';
+  await alertar(
+    `🛑 *Envios congelados*\n\n` +
+      (reabriu ? 'Voltou a falhar logo depois de liberar.' : 'Falhou várias vezes seguidas, com clientes diferentes.') +
+      `\nMotivo: ${motivo}\n\n${volta}`,
+    printPath,
+  );
+}
+
+/**
+ * Chamado pelo tick. Cuida do congelamento em pé: tenta voltar sozinho, avisa
+ * quando voltou, lembra o operador se demora, e avisa a fila.
+ */
+async function vigiarCongelamento() {
+  const d = limites.disjuntor();
+  if (d.estado !== 'aberto') return;
+
+  const r = limites.tentarRecuperar();
+  if (r.acao === 'fechou') {
+    await alertar(
+      `✅ *Envios liberados.* Ficaram parados ${Math.max(1, Math.round(r.congeladoMs / 60000))} min e voltei sozinho.\n\n` +
+        `${clientesParados()} cliente(s) na fila, seguindo na ordem. Se falhar de novo eu congelo outra vez e te aviso.`,
+    );
+    return;
+  }
+
+  // Lembrete: uma vez aos 30 min, depois a cada hora. Sem isto um congelamento
+  // que não cura ficava mudo depois do primeiro aviso.
+  const agora = Date.now();
+  const espera = (d.lembretes ? 60 : cfg.limites.avisoCongeladoMin) * 60 * 1000;
+  if (agora - (d.ultimoAvisoEm || d.abertoEm || agora) >= espera) {
+    d.lembretes = (d.lembretes || 0) + 1;
+    d.ultimoAvisoEm = agora;
+    persistAgora();
+    await alertar(
+      `🛑 *Envios continuam congelados* há ${Math.round((agora - d.abertoEm) / 60000)} min.\n\n` +
+        `${clientesParados()} cliente(s) esperando. ` +
+        (d.automatico
+          ? 'Sigo tentando voltar sozinho. Se preferir, resolve e responde *#liberar*.'
+          : 'Resolve e responde *#liberar*.'),
+    );
+  }
+
+  // Quem já estava na fila quando congelou só ouve falar disso se passar de 5
+  // min: congelamento curto que se desfaz sozinho não precisa assustar ninguém.
+  if (agora - (d.abertoEm || agora) >= 5 * 60 * 1000) {
+    const s = fila.situacao();
+    const ids = [...(s.ativo ? [s.ativo.id] : []), ...s.aguardando.map((x) => x.id)];
+    for (const id of ids) {
+      const at = fila.porId(id);
+      if (!at || at.avisoCongelado) continue;
+      at.avisoCongelado = true;
+      persistAgora();
+      try {
+        await sender.send(at.from, MSG_INSTABILIDADE);
+      } catch (err) {
+        console.error(`[ponte] aviso de instabilidade a ${at.from} falhou:`, err.message);
+      }
+    }
+  }
 }
 
 /**
@@ -1180,6 +1301,10 @@ async function bloqueioDetectado(motivo, printPath) {
       `Envios congelados. ${esperando} cliente(s) na fila.\n\n${comoResolver}`,
     printPath,
   );
+  const dd = limites.disjuntor();
+  dd.ultimoAvisoEm = Date.now();
+  dd.lembretes = 0;
+  persistAgora();
 }
 
 // ============================================================
@@ -1319,8 +1444,11 @@ async function vigiarColeta() {
 async function tick() {
   try {
     await vigiarColeta();
+    await vigiarCongelamento();
 
-    const vencidos = await fila.expirarVencidos();
+    // Congelado, ninguém expira: o cliente não está sem resposta por culpa
+    // dele nem do outro lado, e o prazo é empurrado quando os envios voltam.
+    const vencidos = limites.disjuntor().estado === 'aberto' ? [] : await fila.expirarVencidos();
     for (const v of vencidos) {
       await sender.send(
         v.from,

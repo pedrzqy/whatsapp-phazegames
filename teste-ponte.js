@@ -859,18 +859,238 @@ const OP = '5541999999999';
   limitesMod.abrir('teste de congelamento', null);
   const congelado = await ponteMod.pedirCodigo('5541911114444', 'Fulano', 'usuario1', null);
 
-  t('pedido não é aceito com a fila parada', congelado.aceito === false);
+  // Congelado NÃO rejeita mais: o pedido entra na fila e espera.
+  t('pedido é aceito e fica na fila com os envios parados', congelado.aceito === true);
+  t('o pedido de fato existe na fila', Boolean(estadoPonte.dados.atendimentos.find((a) => a.from === '5541911114444')));
   // A regra é a mesma do resto: nada que o cliente leia pode admitir defeito.
-  t('e o cliente não ouve falar de problema',
-    !/problema|erro|falha|defeito|resolvendo|sistema/i.test(congelado.mensagem), congelado.mensagem);
+  t('o cliente é avisado com calma, sem falar de defeito',
+    /instabilidade/i.test(congelado.mensagem) && !/problema|erro|falha|defeito|resolvendo|sistema/i.test(congelado.mensagem),
+    congelado.mensagem);
   t('nem de robô ou da origem',
     !AUTOMACAO.test(congelado.mensagem) && !PROIBIDO.test(congelado.mensagem), congelado.mensagem);
-  t('mas recebe algum retorno', congelado.mensagem.length > 0);
+  t('e não leva comando de operador', !/#w+/.test(congelado.mensagem), congelado.mensagem);
   limitesMod.fechar();
+  estadoPonte.dados.atendimentos = [];
+  estadoPonte.dados.tarefas = [];
   // persistAgora e não persist: o teste sai por process.exit e o persist normal
   // tem debounce de 400ms — sem o flush, o disjuntor ficava ABERTO no
   // data/ponte.json e a execução seguinte começava congelada do nada.
   estadoPonte.persistAgora();
+
+  // ── Congelamento que se desfaz sozinho ─────────────────────
+  //
+  // Incidente em pico: três falhas seguidas congelaram tudo, cada mensagem de
+  // cliente virou um alerta ("pedido NÃO entrou") e nada andou até alguém mandar
+  // #liberar. Agora: falha de pedido não congela, falha de sistema congela UMA
+  // vez, o pedido novo entra na fila, o prazo para, e o envio volta sozinho.
+  bloco('congelamento: volta sozinho, fila preservada');
+  {
+    const filaMod = require('./src/ponte/fila');
+    const senderMod = require('./src/sender');
+    const cfgMod = require('./src/ponte/config');
+    const dadosP = estadoPonte.dados;
+    const enviadasC = [];
+    const senderAntes = senderMod.send;
+    senderMod.send = async (para, texto) => { enviadasC.push({ para, texto: String(texto) }); };
+    const aoOperador = (re) => enviadasC.filter((e) => e.para === OP && re.test(e.texto));
+
+    const zerar = () => {
+      limitesMod.fechar('teste');
+      dadosP.atendimentos = [];
+      dadosP.tarefas = [];
+      dadosP.avisoTetoEm = 0;
+      dadosP.recarregarPedido = false;
+      dadosP.coletaVistaEm = Date.now();
+      enviadasC.length = 0;
+    };
+    let seqT = 0;
+    const novaTarefa = (at, tentativas = 1, estado = 'executando') => {
+      const tf = {
+        id: `T${++seqT}`, atendimentoId: at.id, tipo: 'pedir_codigo', usuario: at.usuario || 'abc12345',
+        textoZh: null, imagemPath: null, estado, agendadaPara: 0, tentativas, ultimoErro: null,
+      };
+      dadosP.tarefas.push(tf);
+      return tf;
+    };
+    const cliente = async (n) => (await filaMod.entrar(`55419222${n}`, `Cli${n}`)).atendimento;
+    const ERRO = 'elementHandle.click: Timeout 30000ms exceeded';
+
+    try {
+      // 1) Um pedido que falha sozinho não derruba os outros.
+      zerar();
+      const a1 = await cliente('0001');
+      a1.usuario = 'conta0001';
+      for (let n = 1; n <= 3; n++) {
+        const tf = novaTarefa(a1, n);
+        await ponteMod.resultadoTarefa(tf.id, false, ERRO);
+      }
+      t('três falhas do MESMO cliente não congelam', limitesMod.disjuntor().estado === 'fechado',
+        `falhas=${limitesMod.disjuntor().falhasSeguidas}`);
+
+      // 2) Cliente diferente falhando junto: aí é sistema. UM alerta só.
+      const a2 = await cliente('0002');
+      a2.usuario = 'conta0002';
+      enviadasC.length = 0;
+      const tf2 = novaTarefa(a2, 1);
+      await ponteMod.resultadoTarefa(tf2.id, false, ERRO);
+      const d1 = limitesMod.disjuntor();
+      t('falhas seguidas de clientes diferentes congelam', d1.estado === 'aberto' && d1.automatico === true);
+      t('e o operador é avisado UMA vez', aoOperador(/Envios congelados/).length === 1,
+        String(aoOperador(/Envios congelados/).length));
+      t('com a promessa de voltar sozinho e o #liberar', /sozinho/i.test(aoOperador(/Envios congelados/)[0].texto)
+        && /#liberar/.test(aoOperador(/Envios congelados/)[0].texto));
+      t('sem vocabulário proibido', !AUTOMACAO.test(aoOperador(/Envios congelados/)[0].texto));
+
+      // Mais falhas com ele já congelado não geram alerta novo.
+      const tfExtra = novaTarefa(a2, 1);
+      await ponteMod.resultadoTarefa(tfExtra.id, false, ERRO);
+      t('já congelado, outra falha não alerta de novo', aoOperador(/Envios congelados/).length === 1);
+
+      // 3) Cliente novo com tudo parado: entra, é avisado uma vez, ninguém é alertado por isso.
+      enviadasC.length = 0;
+      const CLI_N = '5541933330001';
+      const r1 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', null);
+      const r2 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', null);
+      const r3 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', null);
+      t('pedido durante o congelamento é aceito', r1.aceito && r2.aceito && r3.aceito);
+      t('o cliente ouve a instabilidade uma vez só',
+        /instabilidade/i.test(r1.mensagem) && !/instabilidade/i.test(r2.mensagem) && !/instabilidade/i.test(r3.mensagem),
+        JSON.stringify([r1.mensagem, r2.mensagem]));
+      t('e continua com retorno nas seguintes', r2.mensagem.length > 0 && r3.mensagem.length > 0);
+      t('o pedido dele está na fila, não foi descartado',
+        dadosP.atendimentos.filter((a) => a.from === CLI_N && a.estado === 'aguardando').length === 1);
+      t('o operador NÃO recebe alerta por cliente', aoOperador(/pediu código com os envios congelados|NÃO entrou/).length === 0,
+        aoOperador(/./).map((e) => e.texto.slice(0, 40)).join(' | '));
+
+      // 4) Ninguém expira congelado, nem o alerta de expiração sai.
+      const ativoC = filaMod.ativo();
+      ativoC.expiraEm = Date.now() - 60_000;
+      enviadasC.length = 0;
+      await ponteMod.tick();
+      t('congelado, o atendimento da vez NÃO expira', filaMod.ativo() && filaMod.ativo().id === ativoC.id);
+      t('e não sai "expirou sem código"', aoOperador(/expirou sem código/).length === 0);
+
+      // 5) Estado sobrevive ao restart: está no arquivo.
+      estadoPonte.persistAgora();
+      const noDisco = JSON.parse(fsMod.readFileSync(pathMod.join(DATA_TESTE, 'ponte.json'), 'utf8'));
+      t('congelamento e fila ficam no disco',
+        noDisco.disjuntor.estado === 'aberto' && noDisco.disjuntor.automatico === true
+          && Number(noDisco.disjuntor.proximaSondaEm) > Date.now()
+          && noDisco.atendimentos.some((a) => a.from === CLI_N && a.avisoCongelado === true));
+
+      // 6) Ainda não é hora da sonda: segue congelado.
+      await ponteMod.tick();
+      t('antes da hora da tentativa, segue congelado', limitesMod.disjuntor().estado === 'aberto');
+
+      // 7) Chegou a hora, braço vivo: volta sozinho, UM aviso, prazo empurrado.
+      limitesMod.disjuntor().proximaSondaEm = Date.now() - 1;
+      dadosP.coletaVistaEm = Date.now();
+      enviadasC.length = 0;
+      await ponteMod.tick();
+      t('na hora da tentativa, descongela sozinho', limitesMod.disjuntor().estado === 'fechado');
+      t('avisa o operador UMA vez que voltou', aoOperador(/Envios liberados/).length === 1);
+      t('o aviso de volta traz quantos estão na fila', /3 cliente/.test(aoOperador(/Envios liberados/)[0]?.texto || ''),
+        aoOperador(/Envios liberados/)[0]?.texto);
+      t('pede a recarga da tela antes dos envios', dadosP.recarregarPedido === true);
+      t('o prazo de quem estava na vez foi empurrado', filaMod.ativo().expiraEm > Date.now() + 10 * 60_000);
+      enviadasC.length = 0;
+      await ponteMod.tick();
+      t('tick seguinte não repete o aviso', aoOperador(/Envios liberados/).length === 0);
+
+      // 8) A fila retoma NA ORDEM em que entrou.
+      const tA = novaTarefa(filaMod.ativo(), 0, 'pendente');
+      const ordem = dadosP.tarefas.filter((x) => x.estado === 'pendente').map((x) => x.id);
+      const proxA = ponteMod.proximaTarefa();
+      const proxB = ponteMod.proximaTarefa();
+      t('retoma na ordem em que entraram', proxA && proxB && proxA.id === ordem[0] && proxB.id === ordem[1]
+        && ordem.includes(tA.id), JSON.stringify([ordem, proxA && proxA.id, proxB && proxB.id]));
+      await ponteMod.resultadoTarefa(proxA.id, true);
+      t('sucesso zera o contador', limitesMod.disjuntor().falhasSeguidas === 0);
+
+      // 9) Voltou e falhou de novo logo: congela na hora (uma falha basta), sem repetir o alerta.
+      limitesMod.abrir('de novo', null, { automatico: true });
+      limitesMod.disjuntor().ultimoAvisoEm = Date.now(); // o aviso do congelamento já saiu
+      limitesMod.disjuntor().proximaSondaEm = Date.now() - 1;
+      limitesMod.tentarRecuperar();
+      t('volta em observação', limitesMod.disjuntor().estado === 'fechado' && limitesMod.disjuntor().emObservacao === true);
+      enviadasC.length = 0;
+      const tObs = novaTarefa(filaMod.ativo(), 1);
+      await ponteMod.resultadoTarefa(tObs.id, false, ERRO);
+      t('uma falha em observação já congela', limitesMod.disjuntor().estado === 'aberto');
+      t('com espera maior que a primeira', limitesMod.disjuntor().proximaSondaEm - Date.now() > 4 * 60_000,
+        String(Math.round((limitesMod.disjuntor().proximaSondaEm - Date.now()) / 60000)) + ' min');
+      t('sem alerta repetido logo depois do aviso anterior', aoOperador(/Envios congelados/).length === 0);
+
+      // 10) #liberar continua mandando.
+      const lib = await operador.executar('#liberar', OP);
+      t('#liberar destrava na hora', limitesMod.disjuntor().estado === 'fechado' && /Liberado/.test(lib), lib);
+      t('e zera a espera de tentativas', limitesMod.disjuntor().sondas === 0);
+
+      // 11) Cota por hora do braço NÃO é falha: adia, sem congelar e sem encher o WhatsApp.
+      zerar();
+      const a3 = await cliente('0003');
+      a3.usuario = 'conta0003';
+      const tCota = novaTarefa(a3, 1);
+      for (let n = 0; n < 5; n++) {
+        tCota.estado = 'executando';
+        tCota.tentativas += 1;
+        await ponteMod.resultadoTarefa(tCota.id, false, 'teto local de 10 envios/hora; libera em 120s');
+      }
+      t('estouro da cota não congela', limitesMod.disjuntor().estado === 'fechado'
+        && limitesMod.disjuntor().falhasSeguidas === 0);
+      t('o envio fica pendente e agendado', tCota.estado === 'pendente' && tCota.agendadaPara > Date.now() + 60_000);
+      t('sem gastar tentativa', tCota.tentativas <= 1, String(tCota.tentativas));
+      t('um aviso só, e dizendo que nada foi perdido', aoOperador(/Cota de envios/).length === 1
+        && /Nada foi perdido/.test(aoOperador(/Cota de envios/)[0].texto));
+      t('nem o aviso nem o atendimento expiram à toa', a3.expiraEm > tCota.agendadaPara);
+
+      // 12) Verificação na tela (captcha) segue sendo humano: nunca volta sozinho.
+      zerar();
+      limitesMod.abrir('falhas', null, { automatico: true });
+      enviadasC.length = 0;
+      await ponteMod.bloqueioDetectado('verificação anti-bot detectada', null);
+      t('captcha com congelamento automático em pé AVISA o operador', aoOperador(/Verificação na tela/).length === 1);
+      limitesMod.disjuntor().proximaSondaEm = Date.now() - 1;
+      t('e a partir daí não volta sozinho', limitesMod.tentarRecuperar().acao === 'nada'
+        && limitesMod.disjuntor().estado === 'aberto');
+
+      // 13) Braço fora do ar: não finge que voltou.
+      zerar();
+      limitesMod.abrir('falhas', null, { automatico: true });
+      limitesMod.disjuntor().proximaSondaEm = Date.now() - 1;
+      dadosP.coletaVistaEm = Date.now() - 10 * 60_000;
+      t('braço sem dar sinal: adia a tentativa', limitesMod.tentarRecuperar().acao === 'adiou'
+        && limitesMod.disjuntor().estado === 'aberto');
+
+      // 14) Lembrete: congelado há muito, avisa de novo uma vez (e só).
+      zerar();
+      limitesMod.abrir('falhas', null, { automatico: true });
+      const dL = limitesMod.disjuntor();
+      dL.abertoEm = Date.now() - 31 * 60_000;
+      dL.ultimoAvisoEm = Date.now() - 31 * 60_000;
+      dL.proximaSondaEm = Date.now() + 60 * 60_000; // não deixa a sonda atrapalhar
+      enviadasC.length = 0;
+      await ponteMod.tick();
+      await ponteMod.tick();
+      t('congelado há 30 min: um lembrete, não dois', aoOperador(/continuam congelados/).length === 1,
+        String(aoOperador(/continuam congelados/).length));
+
+      // 15) O painel diz que volta sozinho.
+      const painelC = await operador.executar('#fila', OP);
+      t('#fila mostra a tentativa automática e o #liberar', /sozinho/.test(painelC) && /#liberar/.test(painelC));
+      t('e sem vocabulário proibido', !AUTOMACAO.test(painelC));
+
+      // 16) Desligável por env.
+      t('PONTE_AUTO_RECUPERA existe e vem ligada', cfgMod.limites.autoRecupera === true);
+    } finally {
+      senderMod.send = senderAntes;
+      limitesMod.fechar('teste');
+      estadoPonte.dados.atendimentos = [];
+      estadoPonte.dados.tarefas = [];
+      estadoPonte.persistAgora();
+    }
+  }
+
 
   // ── A promessa só sai depois do #ok ────────────────────────
   // No copiloto nada foi enviado enquanto a tarefa espera aprovação. Dizer

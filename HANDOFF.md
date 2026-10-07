@@ -249,6 +249,19 @@ arquivo de estado novo — quatro já honram.
 
 ## 8 · Pendências
 
+**Congelamento de envios (incidente do pico).** Agora ele volta sozinho. Falha
+sistêmica só congela com 3 falhas seguidas de pelo menos 2 clientes diferentes
+(`PONTE_FALHAS_CLIENTES`, padrão 2). Congelado, o pedido novo ENTRA na fila, o
+cliente ouve uma vez "instabilidade, você continua na fila", ninguém expira e o
+operador não recebe alerta por cliente. O tick tenta voltar em 2, 5, 10, 15 min
+(`PONTE_SONDA_MIN`), pedindo recarga da tela; o próximo envio real é o teste e
+uma falha congela de novo na hora. Avisos: um ao congelar, um ao voltar, lembrete
+aos 30 min e a cada hora (`PONTE_AVISO_CONGELADO_MIN`). `PONTE_AUTO_RECUPERA=false`
+desliga. Captcha e `#liberar` continuam manuais. Causa provável do incidente: o
+teto local do braço (`ENVIO_POR_HORA`, 10) devolvia ok:false e contava como falha;
+agora o bot só adia o envio (`resultadoTarefa`). Para pico real, conversar antes
+de subir `ENVIO_POR_HORA` e `PONTE_LIM_VENDEDOR_HORA` (risco para a conta).
+
 **Operacional (dele, mas cobre):**
 
 1. **Confirmar o volume em `/app/data`** no whatsbot. O mais importante da lista.

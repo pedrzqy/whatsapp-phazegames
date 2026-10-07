@@ -83,6 +83,18 @@ module.exports = {
     vendedorPorDia: num(process.env.PONTE_LIM_VENDEDOR_DIA, 60),
     // Falhas seguidas do braço até abrir o disjuntor sozinho.
     falhasParaAbrir: num(process.env.PONTE_FALHAS_ABRIR, 3),
+    // ...vindas de pelo menos N clientes DIFERENTES. Um pedido só que falha
+    // três vezes seguidas é problema daquele pedido, não do sistema.
+    falhasClientes: num(process.env.PONTE_FALHAS_CLIENTES, 2),
+    // Congelamento por falhas seguidas se desfaz sozinho? (captcha e #liberar
+    // manual nunca: esses esperam gente.) 'false' desliga.
+    autoRecupera: process.env.PONTE_AUTO_RECUPERA !== 'false',
+    // Espera, em minutos, antes de cada tentativa de voltar sozinho. A última
+    // se repete para sempre.
+    sondaMinutos: String(process.env.PONTE_SONDA_MIN || '2,5,10,15')
+      .split(',').map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0),
+    // Congelado há tanto tempo, avisa o operador de novo (e depois a cada hora).
+    avisoCongeladoMin: num(process.env.PONTE_AVISO_CONGELADO_MIN, 30),
   },
 
   // Chave que o braço usa para autenticar nas rotas /ponte/braco/*.
