@@ -172,12 +172,16 @@ function fechar(quem, opcoes = {}) {
   d.automatico = false;
   d.proximaSondaEm = null;
   d.emObservacao = Boolean(opcoes.observar);
+  // A observação vale 15 min. Passou disso sem falha, a volta está provada o
+  // bastante: uma falha no dia seguinte é falha nova, não "logo depois de liberar".
+  d.observacaoAte = opcoes.observar ? Date.now() + 15 * 60 * 1000 : null;
   if (!opcoes.observar) d.sondas = 0;
 
   const prazo = Date.now() + cfg.fila.timeoutMinutos * 60 * 1000;
   for (const a of dados.atendimentos) {
     if (a.estado === 'ativo' && a.expiraEm && a.expiraEm < prazo) a.expiraEm = prazo;
-    delete a.avisoCongelado;
+    // avisoCongelado fica: o cliente ouve a instabilidade UMA vez por atendimento,
+    // por mais que congele e volte no meio.
   }
   persist();
   console.log(`[ponte/disjuntor] fechado por ${d.liberadoPor}`);
@@ -204,6 +208,12 @@ function registrarFalha(detalhe, printPath, atendimentoId) {
 
   if (d.estado === 'aberto') return { falhas: d.falhasSeguidas, abriu: false, reabriu: false };
 
+  if (d.emObservacao && d.observacaoAte && Date.now() > d.observacaoAte) {
+    d.emObservacao = false;
+    d.observacaoAte = null;
+    d.sondas = 0;
+  }
+
   if (d.emObservacao) {
     const abriu = abrir(`falhou de novo logo depois de voltar. Última: ${detalhe}`, printPath, {
       automatico: true,
@@ -229,6 +239,7 @@ function registrarSucesso() {
     d.falhasSeguidas = 0;
     d.falhasPor = [];
     d.emObservacao = false;
+    d.observacaoAte = null;
     d.sondas = 0;
     persist();
   }

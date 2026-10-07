@@ -1151,7 +1151,27 @@ async function resultadoTarefa(id, ok, erro, printPath, fatal = false) {
     return { ok: true, adiado: true };
   }
 
-  const desistir = fatal || t.tentativas >= 3;
+  // Texto vazio é defeito do PEDIDO (nada a digitar), não do sistema: não conta
+  // para o congelamento.
+  const doPedido = /resposta vazia/i.test(String(erro || ''));
+
+  // Três tentativas esgotadas por erro de SISTEMA não condenam o pedido.
+  //
+  // A fila é serial: se o braço está mesmo fora, o cliente da vez gasta as 3
+  // tentativas sozinho, nenhum outro chega a falhar (ninguém mais é promovido)
+  // e o contador de "clientes diferentes" nunca fecha. Resultado: o pedido virava
+  // 'falhou' e ficava 20 min até expirar, sem congelar e sem ser refeito.
+  // Então: esgotou por erro de sistema = congela (volta sozinho) e o pedido
+  // FICA na fila, com as tentativas zeradas, para ser a sonda da volta.
+  // Limite de 2 rodadas: se o MESMO pedido esgota de novo depois de uma volta,
+  // o problema é dele e aí sim vira 'falhou' com alerta, como sempre foi.
+  const esgotou = !fatal && !doPedido && t.tentativas >= 3 && (t.rodadas || 0) < 2;
+  if (esgotou) {
+    t.rodadas = (t.rodadas || 0) + 1;
+    t.tentativas = 0;
+  }
+
+  const desistir = !esgotou && (fatal || t.tentativas >= 3);
   t.estado = desistir ? 'falhou' : 'pendente';
   t.ultimoErro = erro || 'sem detalhe';
   persistAgora();
@@ -1161,12 +1181,14 @@ async function resultadoTarefa(id, ok, erro, printPath, fatal = false) {
   if (erro) console.error(`[ponte] tarefa ${id} falhou:`, erro);
   const motivo = politica.motivoNeutro(erro);
 
-  // Texto vazio é defeito do PEDIDO (nada a digitar), não do sistema: não conta
-  // para o congelamento.
-  const doPedido = /resposta vazia/i.test(String(erro || ''));
-  const { abriu, reabriu } = doPedido
+  let { abriu, reabriu } = doPedido
     ? { abriu: false, reabriu: false }
     : limites.registrarFalha(erro || 'falha no envio', printPath, t.atendimentoId);
+  if (esgotou && limites.disjuntor().estado !== 'aberto') {
+    abriu = limites.abrir(`um pedido esgotou as tentativas. Última: ${erro || 'falha no envio'}`, printPath, {
+      automatico: true,
+    });
+  }
   if (abriu) {
     await avisarCongelamento({ motivo, printPath, reabriu });
   } else if (desistir) {
@@ -1201,7 +1223,14 @@ async function avisarCongelamento({ motivo, printPath, reabriu = false }) {
   const d = limites.disjuntor();
   const agora = Date.now();
   const recente = d.ultimoAvisoEm && agora - d.ultimoAvisoEm < 30 * 60 * 1000;
-  if (reabriu && recente) return;
+  if (reabriu && recente) {
+    // Calou o aviso: a volta que vier também fica calada (vigiarCongelamento),
+    // para o operador não ler "liberados" sem o "congelados" correspondente.
+    d.silencioso = true;
+    persistAgora();
+    return;
+  }
+  d.silencioso = false;
   d.ultimoAvisoEm = agora;
   persistAgora();
 
@@ -1229,6 +1258,12 @@ async function vigiarCongelamento() {
 
   const r = limites.tentarRecuperar();
   if (r.acao === 'fechou') {
+    if (d.silencioso) {
+      d.silencioso = false;
+      persistAgora();
+      console.log('[ponte] voltou sozinho (congelamento não foi anunciado, volta também não)');
+      return;
+    }
     await alertar(
       `✅ *Envios liberados.* Ficaram parados ${Math.max(1, Math.round(r.congeladoMs / 60000))} min e voltei sozinho.\n\n` +
         `${clientesParados()} cliente(s) na fila, seguindo na ordem. Se falhar de novo eu congelo outra vez e te aviso.`,

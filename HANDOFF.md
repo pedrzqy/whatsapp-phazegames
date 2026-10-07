@@ -258,9 +258,11 @@ operador não recebe alerta por cliente. O tick tenta voltar em 2, 5, 10, 15 min
 uma falha congela de novo na hora. Avisos: um ao congelar, um ao voltar, lembrete
 aos 30 min e a cada hora (`PONTE_AVISO_CONGELADO_MIN`). `PONTE_AUTO_RECUPERA=false`
 desliga. Captcha e `#liberar` continuam manuais. Causa provável do incidente: o
-teto local do braço (`ENVIO_POR_HORA`, 10) devolvia ok:false e contava como falha;
-agora o bot só adia o envio (`resultadoTarefa`). Para pico real, conversar antes
-de subir `ENVIO_POR_HORA` e `PONTE_LIM_VENDEDOR_HORA` (risco para a conta).
+teto local do braço (`ENVIO_POR_HORA`, era 10, agora 20) devolvia ok:false e contava como falha;
+agora o bot só adia o envio (`resultadoTarefa`). O dono subiu o teto para 20/h
+(`ENVIO_POR_HORA` no braço, `PONTE_LIM_VENDEDOR_HORA` no whatsbot; diário 120).
+Pedido que esgota 3 tentativas por erro de sistema congela e fica na fila (até 2
+rodadas) em vez de virar 'falhou'. Aviso de volta só sai se o congelamento foi anunciado.
 
 **Operacional (dele, mas cobre):**
 

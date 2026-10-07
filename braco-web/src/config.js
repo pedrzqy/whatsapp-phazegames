@@ -37,7 +37,7 @@ module.exports = {
   lerMaxSeg: num(process.env.LER_MAX_SEG, 110),
 
   // Teto local de envios por hora. O bot também limita; esta é a segunda trava.
-  envioPorHora: num(process.env.ENVIO_POR_HORA, 10),
+  envioPorHora: num(process.env.ENVIO_POR_HORA, 20),
 
   // Pasta onde os prints de erro/captcha são gravados.
   prints: process.env.PRINTS_DIR || './prints',

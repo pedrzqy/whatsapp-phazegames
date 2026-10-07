@@ -78,9 +78,9 @@ module.exports = {
     // Camada 1 — anti-flood por cliente.
     clientePorHora: num(process.env.PONTE_LIM_CLIENTE_HORA, 5),
     // Camada 2 — a que de fato reduz risco de banimento da conta Taobao.
-    vendedorPorHora: num(process.env.PONTE_LIM_VENDEDOR_HORA, 10),
+    vendedorPorHora: num(process.env.PONTE_LIM_VENDEDOR_HORA, 20),
     // Camada 3 — teto absoluto do dia, rede de segurança contra bug em loop.
-    vendedorPorDia: num(process.env.PONTE_LIM_VENDEDOR_DIA, 60),
+    vendedorPorDia: num(process.env.PONTE_LIM_VENDEDOR_DIA, 120),
     // Falhas seguidas do braço até abrir o disjuntor sozinho.
     falhasParaAbrir: num(process.env.PONTE_FALHAS_ABRIR, 3),
     // ...vindas de pelo menos N clientes DIFERENTES. Um pedido só que falha

@@ -920,11 +920,11 @@ const OP = '5541999999999';
       zerar();
       const a1 = await cliente('0001');
       a1.usuario = 'conta0001';
-      for (let n = 1; n <= 3; n++) {
+      for (let n = 1; n <= 2; n++) {
         const tf = novaTarefa(a1, n);
         await ponteMod.resultadoTarefa(tf.id, false, ERRO);
       }
-      t('três falhas do MESMO cliente não congelam', limitesMod.disjuntor().estado === 'fechado',
+      t('falhas repetidas do MESMO cliente (sem esgotar) não congelam', limitesMod.disjuntor().estado === 'fechado',
         `falhas=${limitesMod.disjuntor().falhasSeguidas}`);
 
       // 2) Cliente diferente falhando junto: aí é sistema. UM alerta só.
@@ -1080,8 +1080,84 @@ const OP = '5541999999999';
       t('#fila mostra a tentativa automática e o #liberar', /sozinho/.test(painelC) && /#liberar/.test(painelC));
       t('e sem vocabulário proibido', !AUTOMACAO.test(painelC));
 
+      // 17) Esgotou as 3 tentativas por erro de sistema: congela E o pedido fica.
+      zerar();
+      const a4 = await cliente('0004');
+      a4.usuario = 'conta0004';
+      const tEsg = novaTarefa(a4, 3);
+      await ponteMod.resultadoTarefa(tEsg.id, false, ERRO);
+      t('pedido que esgota por erro de sistema congela', limitesMod.disjuntor().estado === 'aberto'
+        && limitesMod.disjuntor().automatico === true);
+      t('e o pedido NÃO vira falhou: segue na fila com tentativas zeradas',
+        tEsg.estado === 'pendente' && tEsg.tentativas === 0 && tEsg.rodadas === 1, `${tEsg.estado}/${tEsg.tentativas}`);
+      t('sem alerta de "desisti" (o congelamento já avisou)', aoOperador(/Desisti/).length === 0
+        && aoOperador(/Envios congelados/).length === 1);
+      // Depois de 2 rodadas o problema é do pedido: aí desiste com alerta.
+      limitesMod.fechar('teste');
+      tEsg.estado = 'executando';
+      tEsg.rodadas = 2;
+      tEsg.tentativas = 3;
+      enviadasC.length = 0;
+      await ponteMod.resultadoTarefa(tEsg.id, false, ERRO);
+      t('esgotando de novo depois de duas rodadas, desiste com alerta', tEsg.estado === 'falhou'
+        && aoOperador(/Desisti/).length === 1);
+
+      // 18) A instabilidade é dita UMA vez por atendimento, mesmo congelando de novo.
+      zerar();
+      const a5 = await cliente('0005');
+      a5.usuario = 'conta0005';
+      limitesMod.abrir('f', null, { automatico: true });
+      limitesMod.disjuntor().abertoEm = Date.now() - 6 * 60_000;
+      limitesMod.disjuntor().ultimoAvisoEm = Date.now();
+      limitesMod.disjuntor().proximaSondaEm = Date.now() + 3600_000;
+      await ponteMod.tick();
+      const aviso1 = enviadasC.filter((e) => e.para === a5.from && /instabilidade/i.test(e.texto)).length;
+      limitesMod.disjuntor().proximaSondaEm = Date.now() - 1;
+      limitesMod.tentarRecuperar();
+      limitesMod.abrir('f2', null, { automatico: true, sondas: 1 });
+      limitesMod.disjuntor().abertoEm = Date.now() - 6 * 60_000;
+      limitesMod.disjuntor().proximaSondaEm = Date.now() + 3600_000;
+      await ponteMod.tick();
+      const aviso2 = enviadasC.filter((e) => e.para === a5.from && /instabilidade/i.test(e.texto)).length;
+      t('cliente na fila ouve a instabilidade uma vez, não a cada ciclo', aviso1 === 1 && aviso2 === 1,
+        `${aviso1}/${aviso2}`);
+
+      // 19) Avisos simétricos: "liberados" só se o "congelados" saiu.
+      zerar();
+      const a6 = await cliente('0006');
+      const a7 = await cliente('0007');
+      await ponteMod.resultadoTarefa(novaTarefa(a6, 1).id, false, ERRO);
+      await ponteMod.resultadoTarefa(novaTarefa(a6, 1).id, false, ERRO);
+      await ponteMod.resultadoTarefa(novaTarefa(a7, 1).id, false, ERRO);
+      limitesMod.disjuntor().proximaSondaEm = Date.now() - 1;
+      dadosP.coletaVistaEm = Date.now();
+      await ponteMod.tick(); // volta (anunciada)
+      await ponteMod.resultadoTarefa(novaTarefa(a6, 1).id, false, ERRO); // reabre calado
+      t('reabrir logo depois não repete o aviso de congelado', limitesMod.disjuntor().estado === 'aberto'
+        && aoOperador(/Envios congelados/).length === 1);
+      limitesMod.disjuntor().proximaSondaEm = Date.now() - 1;
+      dadosP.coletaVistaEm = Date.now();
+      await ponteMod.tick(); // volta calada
+      t('e a volta calada também não é anunciada', limitesMod.disjuntor().estado === 'fechado'
+        && aoOperador(/Envios liberados/).length === 1,
+        `liberados=${aoOperador(/Envios liberados/).length}`);
+
+      // 20) A observação vence com o tempo.
+      zerar();
+      limitesMod.abrir('f', null, { automatico: true });
+      limitesMod.disjuntor().proximaSondaEm = Date.now() - 1;
+      dadosP.coletaVistaEm = Date.now();
+      limitesMod.tentarRecuperar();
+      t('observação tem validade', limitesMod.disjuntor().observacaoAte > Date.now());
+      limitesMod.disjuntor().observacaoAte = Date.now() - 1;
+      limitesMod.disjuntor().sondas = 3;
+      limitesMod.registrarFalha('x', null, 'qualquer');
+      t('falha depois de vencida a observação não congela na hora', limitesMod.disjuntor().estado === 'fechado'
+        && limitesMod.disjuntor().sondas === 0 && limitesMod.disjuntor().emObservacao === false);
+
       // 16) Desligável por env.
       t('PONTE_AUTO_RECUPERA existe e vem ligada', cfgMod.limites.autoRecupera === true);
+      t('cota por hora do vendedor agora é 20', cfgMod.limites.vendedorPorHora === 20 && cfgMod.limites.vendedorPorDia === 120);
     } finally {
       senderMod.send = senderAntes;
       limitesMod.fechar('teste');
