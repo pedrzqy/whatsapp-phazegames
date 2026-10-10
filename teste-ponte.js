@@ -338,6 +338,7 @@ t('avisa para não mandar senha', /senha/i.test(r2.mensagem || ''));
 // certo, porque quem comprou várias vezes tem vários e manda o último.
 t('  e agora a imagem é a do login', r2.exemplo === 'login', String(r2.exemplo));
 t('  dizendo que não é a senha', /sem a senha/i.test(r2.mensagem || ''), r2.mensagem);
+t('  e manda mandar aqui no WhatsApp', /aqui no WhatsApp/.test(r2.mensagem || ''), r2.mensagem);
 
 r2 = recepcao.avaliar(CLI4, 'rsd32', null);
 t('o usuário fecha o fluxo', r2.acao === 'pedir', r2.acao);

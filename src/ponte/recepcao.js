@@ -181,13 +181,16 @@ const msgEspera = (aFrente) =>
 // outra conta, e o erro só aparece na tela do cliente lá na frente.
 const MSG_PEDE_USUARIO =
   'Foto recebida ✅\n\n' +
-  '2️⃣ Agora digita o *login* da conta que você colocou no seu *Nintendo Switch*.\n\n' +
-  'É o *primeiro login* da mensagem de entrega que a gente te mandou (normalmente do lado da 🔑 ou de *Login:*), igual na imagem 👆\n\n' +
+  '2️⃣ Agora me manda *aqui no WhatsApp*, nesta conversa, o *login* da conta.\n\n' +
+  '⚠️ Não é pra digitar nada no Switch, é só me mandar aqui.\n\n' +
+  'O login é o *primeiro* que aparece na mensagem de entrega que a gente te mandou (do lado da 🔑 ou de *Login:*), igual na imagem 👆\n\n' +
+  '📌 Exemplo: se na entrega está 🔑 *abcd1234*, você me manda só: *abcd1234*\n\n' +
   'Só o login, *sem a senha*.';
 
 const MSG_USUARIO_INVALIDO =
   'Não entendi o login 🤔\n\n' +
-  'Manda *só o login* da conta que você colocou no seu *Nintendo Switch*: o *primeiro login* da mensagem de entrega, do lado da 🔑 ou de *Login:* 👆';
+  'Não precisa digitar nada no Switch. Me manda *aqui no WhatsApp* só o login: o *primeiro* da mensagem de entrega, do lado da 🔑 ou de *Login:* 👆\n\n' +
+  '📌 Exemplo: se na entrega está 🔑 *abcd1234*, você me manda só: *abcd1234*';
 
 /** Qual imagem acompanha cada instrução. Nome, não bytes: quem lê o disco é o handlers. */
 const EXEMPLO_DO_AVISO = {
