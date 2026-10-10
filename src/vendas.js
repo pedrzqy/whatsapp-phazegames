@@ -31,6 +31,7 @@ const fs = require('fs');
 const path = require('path');
 const nerix = require('./nerix');
 const sender = require('./sender');
+const telefones = require('./telefone');
 const { formatOrder } = require('./tools');
 
 // A lista de operadores mora na config da ponte porque foi lá que ela nasceu.
@@ -116,7 +117,7 @@ function marcar(codigo, passo) {
 // ── Telefone ─────────────────────────────────────────────────
 
 /**
- * Telefone do pedido → número de WhatsApp, ou null.
+ * Telefone do pedido → número de WhatsApp, ou null. (Regra em telefone.js.)
  *
  * Estrito de propósito. O campo é preenchido por gente no checkout, então
  * chega de tudo: com máscara, sem DDD, com +55, com 9 a mais, com texto junto.
@@ -125,18 +126,19 @@ function marcar(codigo, passo) {
  *
  * Aceita só o que é inequívoco:
  *   10 ou 11 dígitos  → número BR sem código do país, prefixa 55
+ *                       (ou México, se o pedido disser que é: `pais`)
  *   12 ou 13 com 55   → já está pronto
+ *   12 ou 13 com 52/521 → México (loja vende lá também)
+ *   começando com + ou 00 → o país está escrito, respeita
  * Qualquer outra coisa devolve null, e quem chama trata como "entrega manual".
  */
-function paraWhatsApp(telefone) {
-  const so = String(telefone || '').replace(/\D/g, '');
-  if (!so) return null;
+const paraWhatsApp = telefones.paraWhatsApp;
 
-  if (so.length === 10 || so.length === 11) return `55${so}`;
-  if ((so.length === 12 || so.length === 13) && so.startsWith('55')) return so;
+/** O telefone cru do pedido da Nerix, em qualquer das formas que ele vem. */
+const telefoneDoCru = (cru) => cru?.customer_phone || cru?.customer?.phone || cru?.phone || '';
 
-  return null;
-}
+/** Número de WhatsApp de um pedido cru (telefone + país do pedido). */
+const numeroDoCru = (cru) => paraWhatsApp(telefoneDoCru(cru), telefones.paisDoPedido(cru));
 
 // ── Leitura do pedido ────────────────────────────────────────
 
@@ -212,6 +214,8 @@ async function carregar(evento) {
     nome: cru.customer_name || cru.customer?.name || cru.name || '',
     email: cru.customer_email || cru.customer?.email || '',
     telefone: cru.customer_phone || cru.customer?.phone || cru.phone || '',
+    // Pista de país (México/Brasil) para telefone sem + (telefone.js).
+    pais: telefones.paisDoPedido(cru),
   };
 }
 
@@ -339,7 +343,7 @@ async function mandarPixNaHora(pedido) {
   const pix = pedido.pix;
   if (!pix && !pedido.link_pagamento) return;
 
-  const numero = paraWhatsApp(pedido.telefone);
+  const numero = paraWhatsApp(pedido.telefone, pedido.pais);
   if (!numero) return; // sem telefone confiável não há a quem mandar
 
   // Marca antes de mandar, como no resto do arquivo: falha de envio não pode
@@ -424,7 +428,7 @@ async function notificarVenda(pedido) {
  * menu; inventar um número aqui é criar uma promessa que ninguém prometeu.
  */
 async function avisarPagamentoAoCliente(pedido) {
-  const numero = paraWhatsApp(pedido.telefone);
+  const numero = paraWhatsApp(pedido.telefone, pedido.pais);
   if (!numero) return; // sem telefone confiável não há a quem avisar
   if (!marcar(pedido.codigo, 'avisadoPago')) return;
 
@@ -467,7 +471,7 @@ async function entregarChaves(pedido) {
     return;
   }
 
-  const numero = paraWhatsApp(pedido.telefone);
+  const numero = paraWhatsApp(pedido.telefone, pedido.pais);
   if (!numero) {
     // A CHAVE VAI JUNTO. Sem ela o aviso é só um "vá procurar no painel": o
     // operador está no celular, no meio de outra coisa, e a única razão de
@@ -567,8 +571,9 @@ async function pedidosDoTelefone(telefone, { limite = 100 } = {}) {
   if (!Array.isArray(lista)) return [];
 
   const meus = lista.filter((p) => {
-    const dele = paraWhatsApp(p.customer_phone || p.customer?.phone || p.phone);
-    return dele && dele === alvo;
+    const dele = numeroDoCru(p);
+    // mesmoNumero: 521... e 52... são o mesmo celular mexicano.
+    return dele && telefones.mesmoNumero(dele, alvo);
   });
 
   // Mais novo primeiro: quem pergunta "cadê meu pedido" quer o último.
@@ -651,7 +656,7 @@ async function lembrarPixPendente() {
     const idade = agora - criadoEm;
     if (!(idade > PIX_MIN_MS && idade < PIX_MAX_MS)) continue;
 
-    const numero = paraWhatsApp(cru.customer_phone || cru.customer?.phone);
+    const numero = numeroDoCru(cru);
     if (!numero) continue;
     if (jaFeito(fmt.codigo, 'lembradoPix')) continue;
 
@@ -828,6 +833,8 @@ module.exports = {
   // chave e mandar para o número errado são as duas falhas caras deste
   // arquivo, e as duas moram nestas funções.
   paraWhatsApp,
+  telefoneDoCru,
+  numeroDoCru,
   grupoDeVendas,
   avisarVenda,
   definirGrupoVendas,

@@ -95,7 +95,7 @@ async function conferirEntregas(agora = Date.now()) {
     // Cliente com atendente humano NÃO recebe: ele está no meio de um problema,
     // e "tudo certo com a ativação?" no meio disso é o bot atropelando a
     // conversa de quem está resolvendo.
-    const numero = vendas.paraWhatsApp(reg.telefone);
+    const numero = vendas.paraWhatsApp(reg.telefone, reg.pais);
     if (!numero) {
       vendas.marcar(codigo, 'conferido');
       continue;

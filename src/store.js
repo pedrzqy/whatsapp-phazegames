@@ -49,7 +49,16 @@ function persist() {
 }
 
 function getContact(id) {
-  return contacts[id] || null;
+  if (contacts[id]) return contacts[id];
+  // Mesmo celular mexicano em duas formas (52 + 10 e 521 + 10): o contato fica
+  // gravado com a que o WhatsApp mandou, e o pedido chega com a outra.
+  const forma = String(id || '');
+  if (/^52\d{10,11}$/.test(forma)) {
+    for (const alt of require('./telefone').formasDoNumero(forma)) {
+      if (contacts[alt]) return contacts[alt];
+    }
+  }
+  return null;
 }
 
 /** Snapshot de todos os contatos como pares [id, contato]. Usado pela recuperação de venda. */

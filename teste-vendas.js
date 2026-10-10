@@ -92,6 +92,39 @@ const CLI = '5541999998888';
   t('longo demais não vira número', vendas.paraWhatsApp('123456789012345') === null);
   t('estrangeiro não ganha 55', vendas.paraWhatsApp('351912345678') === null);
 
+  // ── México (+52) ───────────────────────────────────────────
+  //
+  // A loja também vende no México. Antes, tudo aqui assumia Brasil: 10 dígitos
+  // ganhavam 55 (e iam para um estranho) e 52... não passava no filtro, então
+  // nem Pix, nem confirmação, nem chave chegavam.
+  bloco('telefone mexicano vira número de WhatsApp');
+  const MX = '525512345678';
+  t('+52 1 55 1234 5678 (móvil antigo)', vendas.paraWhatsApp('+52 1 55 1234 5678') === MX);
+  t('+52 55 1234 5678', vendas.paraWhatsApp('+52 55 1234 5678') === MX);
+  t('52 55 1234 5678, sem +', vendas.paraWhatsApp('52 55 1234 5678') === MX);
+  t('521 + 10, sem +', vendas.paraWhatsApp('5215512345678') === MX);
+  t('00 52 na frente', vendas.paraWhatsApp('0052 55 1234 5678') === MX);
+  t('com máscara', vendas.paraWhatsApp('+52 (55) 1234-5678') === MX);
+  t('10 dígitos COM país México', vendas.paraWhatsApp('5512345678', 'MX') === MX);
+  t('  país como nome', vendas.paraWhatsApp('5512345678', 'México') === MX);
+  t('  país como moeda do pedido', vendas.paraWhatsApp('5512345678', 'MXN') === MX);
+  t('1 + 10 com país México', vendas.paraWhatsApp('15512345678', 'MX') === MX);
+  t('10 dígitos sem país continua Brasil', vendas.paraWhatsApp('4133334444') === '554133334444');
+  t('10 dígitos cujo início não é DDD brasileiro é México', vendas.paraWhatsApp('5712345678') === '525712345678');
+  t('Brasil com país BR explícito', vendas.paraWhatsApp('5512345678', 'BR') === '555512345678');
+  t('+55 mal formado não vira número', vendas.paraWhatsApp('+55 41 9999') === null);
+  t('+52 mal formado não vira número', vendas.paraWhatsApp('+52 55 1234') === null);
+  t('outro país com + é respeitado', vendas.paraWhatsApp('+351 912 345 678') === '351912345678');
+  t('+55 continua igual', vendas.paraWhatsApp('+55 (41) 99999-8888') === '5541999998888');
+  const tel = require('./src/telefone');
+  t('521 e 52 são o mesmo número', tel.mesmoNumero('5215512345678', '525512345678'));
+  t('521 e 52 de outro número não casam', !tel.mesmoNumero('5215512345678', '525512345679'));
+  t('nono dígito BR continua casando', tel.mesmoNumero('5541999998888', '554199998888'));
+  t('BR e MX nunca casam', !tel.mesmoNumero('5541999998888', '525512345678'));
+  t('país lido do pedido: country', tel.paisDoPedido({ customer: { country: 'MX' } }) === 'MX');
+  t('país lido do pedido: moeda', tel.paisDoPedido({ currency: 'MXN' }) === 'MX');
+  t('sem pista, sem país', tel.paisDoPedido({ customer_phone: '5512345678' }) === null);
+
   // ── O Pix na hora ──────────────────────────────────────────
   //
   // Relato do dono: "o sistema de mandar qr-code precisa ser imediato, não tem
@@ -293,6 +326,79 @@ const CLI = '5541999998888';
   await vendas.onEvento({ event: 'order.delivered', data: { order_number: 'ped-3' } });
   t('segundo webhook não reenvia', !enviadas.some((e) => e.texto.includes('ABC-123-XYZ')),
     JSON.stringify(enviadas.map((e) => e.para)));
+
+  bloco('pedido do México: Pix e chave chegam');
+  const CLI_MX = '525512345678';
+  for (const [rotulo, over] of [
+    ['+52 1 55 1234 5678', { customer_phone: '+52 1 55 1234 5678' }],
+    ['52 55 1234 5678', { customer_phone: '52 55 1234 5678' }],
+    ['5512345678 com país no cliente', { customer_phone: '5512345678', customer: { country: 'MX' } }],
+    ['5512345678 com moeda MXN', { customer_phone: '5512345678', currency: 'MXN' }],
+  ]) {
+    const cod = 'mx-' + rotulo.replace(/\W/g, '');
+    enviadas = [];
+    pedidoFalso = pendente({ order_number: cod, ...over });
+    await vendas.onEvento({ event: 'order.created', data: { order_number: cod } });
+    const pix = enviadas.filter((e) => e.para === CLI_MX);
+    t(`Pix chega: ${rotulo}`, pix.length === 2 && pix[1].texto === PIX_FALSO,
+      JSON.stringify(enviadas.map((e) => e.para)));
+    t('  e nada foi para número brasileiro', !enviadas.some((e) => e.para.startsWith('55') && e.para !== OP));
+
+    enviadas = [];
+    pedidoFalso = pedido({ order_number: cod + 'd', status: 'delivered', ...over,
+      items: [{ product_name: 'Celeste', quantity: 1, product_key: 'MX-KEY-1' }] });
+    await vendas.onEvento({ event: 'order.delivered', data: { order_number: cod + 'd' } });
+    t(`chave chega: ${rotulo}`,
+      enviadas.some((e) => e.para === CLI_MX && e.texto.includes('MX-KEY-1')),
+      JSON.stringify(enviadas.map((e) => e.para)));
+  }
+
+  bloco('pedidos achados pelo número mexicano (#meulogin, status)');
+  listaFalsa = [
+    { order_number: 'mx-a', customer_phone: '+52 1 55 1234 5678', created_at: new Date().toISOString(), status: 'paid' },
+    { order_number: 'mx-b', customer_phone: '5512345678', customer: { country: 'MX' }, created_at: new Date().toISOString(), status: 'paid' },
+    { order_number: 'mx-outro', customer_phone: '+52 55 9999 0000', created_at: new Date().toISOString(), status: 'paid' },
+    { order_number: 'br-igual-fim', customer_phone: '5512345678', created_at: new Date().toISOString(), status: 'paid' },
+  ];
+  // O WhatsApp entrega o remetente como 52... ou 521..., e as duas têm que achar.
+  for (const jid of ['525512345678', '5215512345678']) {
+    const meusMx = await vendas.pedidosDoTelefone(jid);
+    t(`acha pelo JID ${jid}`, meusMx.map((p) => p.order_number).sort().join() === 'mx-a,mx-b',
+      JSON.stringify(meusMx.map((p) => p.order_number)));
+  }
+  const brs = await vendas.pedidosDoTelefone('555512345678');
+  t('o brasileiro de mesmos dígitos só vê o dele', brs.map((p) => p.order_number).join() === 'br-igual-fim',
+    JSON.stringify(brs.map((p) => p.order_number)));
+
+  bloco('evolution resolve o JID mexicano (onWhatsApp), com cache');
+  {
+    const evolution = require('./src/evolution');
+    const orig = evolution.http.post;
+    const chamadas = [];
+    evolution.http.post = async (url, corpo) => {
+      chamadas.push({ url, corpo });
+      // Só a forma 521 existe na conta (caso antigo).
+      return { data: corpo.numbers.map((n) => ({ number: n, exists: n === '5215599990000', jid: `${n}@s.whatsapp.net` })) };
+    };
+    try {
+      evolution._cacheJid.clear();
+      const d1 = await evolution.destino('525599990000', 'inst');
+      t('acha a forma que existe', d1 === '5215599990000', d1);
+      t('  perguntou as duas formas', chamadas[0]?.url === '/chat/whatsappNumbers/inst' &&
+        chamadas[0].corpo.numbers.join() === '525599990000,5215599990000', JSON.stringify(chamadas[0]));
+      await evolution.destino('525599990000', 'inst');
+      t('  segunda vez vem do cache', chamadas.length === 1, `${chamadas.length} chamada(s)`);
+      const br = await evolution.destino('5541999998888', 'inst');
+      t('Brasil passa direto, sem consulta', br === '5541999998888' && chamadas.length === 1);
+      const grupo = await evolution.destino('120363@g.us', 'inst');
+      t('grupo passa direto', grupo === '120363@g.us' && chamadas.length === 1);
+      evolution.http.post = async () => { throw new Error('fora do ar'); };
+      const falho = await evolution.destino('525511110000', 'inst');
+      t('consulta falhando não impede o envio', falho === '525511110000', falho);
+    } finally {
+      evolution.http.post = orig;
+    }
+  }
 
   bloco('telefone impossível não vira envio às cegas');
   enviadas = [];

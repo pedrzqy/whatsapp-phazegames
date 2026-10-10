@@ -742,6 +742,25 @@ function webhookDe(numero, message, pushName = 'Cliente') {
   const comMarkdown = comoOClienteVe.filter((m) => /\*\*/.test(m.texto));
   t('  nem negrito de markdown', comMarkdown.length === 0, comMarkdown[0]?.texto.slice(0, 60) || 'limpo');
 
+  // ── Números do México (+52) ──────────────────────────────────
+  bloco('número mexicano: operador e contato casam nas duas formas (52 / 521)');
+  {
+    const op = require('./src/ponte/config').operador;
+    const antes = op.numeros.slice();
+    op.numeros.push('5215511112222'); // configurado como 521...
+    t('operador 521 reconhece o remetente 52', op.ehOperador('525511112222@s.whatsapp.net'));
+    t('  e o 521 com sufixo de aparelho', op.ehOperador('5215511112222:7@s.whatsapp.net'));
+    t('  mas não outro número', !op.ehOperador('525511112223'));
+    op.numeros.length = 0;
+    antes.forEach((n) => op.numeros.push(n));
+
+    store.saveContact('5215533334444', { paused: true });
+    t('contato gravado como 521 é achado como 52', store.getContact('525533334444')?.paused === true);
+    store.saveContact('525544445555', { paused: true });
+    t('  e o inverso', store.getContact('5215544445555')?.paused === true);
+    t('  número brasileiro não é afetado', store.getContact('5541900000001') === null);
+  }
+
   servidor.close();
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));
   process.exit(falhas ? 1 : 0);

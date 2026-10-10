@@ -129,21 +129,13 @@ module.exports = {
       String(bruto || '').split('@')[0].split(':')[0].replace(/\D/g, '');
 
     /**
-     * As duas formas do mesmo celular brasileiro: com e sem o nono dígito.
+     * As formas do mesmo celular: com e sem o nono dígito (BR), 52 e 521 (MX).
      *
      * 55 + DDD + 9 + 8 dígitos (13) é o formato novo; 55 + DDD + 8 dígitos (12)
      * é o antigo, e contas registradas há mais tempo ainda chegam assim. Quem
      * configura escreve de um jeito e o WhatsApp entrega do outro.
      */
-    const mesmasFormas = (numero) => {
-      const n = normalizarNumero(numero);
-      if (!n.startsWith('55')) return [n];
-      const ddd = n.slice(2, 4);
-      const resto = n.slice(4);
-      if (resto.length === 9 && resto.startsWith('9')) return [n, `55${ddd}${resto.slice(1)}`];
-      if (resto.length === 8) return [n, `55${ddd}9${resto}`];
-      return [n];
-    };
+    const mesmasFormas = (numero) => require('../telefone').formasDoNumero(numero);
 
     // Números (só dígitos) que recebem alertas de captcha e fila travada e
     // podem dar comandos. Sem nenhum, o disjuntor abre e ninguém fica sabendo.

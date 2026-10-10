@@ -28,11 +28,65 @@ function toNumber(raw) {
   return s.includes('@') ? s : s.replace(/\D/g, '');
 }
 
+// ── Número estrangeiro: descobrir o JID de verdade ───────────
+//
+// O Brasil tem a regra do nono dígito e a Evolution a resolve sozinha. O México
+// não: um celular já foi 521 + 10 dígitos e hoje é 52 + 10, e o checkout, o
+// webhook e a conversa trazem as duas formas. Mandar para a errada = mensagem
+// que não chega, sem erro. Então, fora do Brasil, pergunta-se ao WhatsApp
+// (`/chat/whatsappNumbers`, o onWhatsApp) qual das formas existe e usa-se o
+// JID que ele devolve. O resultado fica em cache: é uma ida a mais só na
+// primeira mensagem para o número.
+const CACHE_ACHOU_MS = 24 * 3600 * 1000;
+const CACHE_NAO_ACHOU_MS = 5 * 60 * 1000;
+const cacheJid = new Map(); // `${instancia}:${digitos}` → { numero, ate }
+
+/** Formas a testar no onWhatsApp para um número sem JID conhecido. */
+function candidatos(digitos) {
+  return require('./telefone').formasDoNumero(digitos);
+}
+
+/**
+ * Número (ou JID) → destino que a Evolution aceita. Brasil, grupos e qualquer
+ * coisa com @ passam direto, como sempre; só número estrangeiro é consultado.
+ * Falha na consulta NUNCA impede o envio: usa o número como veio.
+ */
+async function destino(raw, instance) {
+  const direto = toNumber(raw);
+  if (direto.includes('@')) return direto;
+  if (direto.length < 10 || direto.startsWith('55')) return direto;
+
+  const chave = `${instance}:${direto}`;
+  const hit = cacheJid.get(chave);
+  if (hit && hit.ate > Date.now()) return hit.numero;
+
+  const lista = candidatos(direto);
+  try {
+    const { data } = await http.post(`/chat/whatsappNumbers/${instance}`, { numbers: lista });
+    const achados = Array.isArray(data) ? data : data?.data || [];
+    // Respeita a ordem dos candidatos: a forma atual (52 + 10) primeiro.
+    for (const c of lista) {
+      const r = achados.find((x) => x && x.exists && (String(x.number || '').replace(/\D/g, '') === c ||
+        String(x.jid || '').split('@')[0] === c));
+      if (r) {
+        const numero = String(r.jid || r.number || c).split('@')[0].replace(/\D/g, '') || c;
+        cacheJid.set(chave, { numero, ate: Date.now() + CACHE_ACHOU_MS });
+        return numero;
+      }
+    }
+    // Nenhuma existe: manda como veio e lembra por pouco tempo.
+    cacheJid.set(chave, { numero: direto, ate: Date.now() + CACHE_NAO_ACHOU_MS });
+  } catch (err) {
+    console.warn(`[evolution] whatsappNumbers falhou para ${direto}: ${err.response?.status || err.message}`);
+  }
+  return direto;
+}
+
 /** Envia uma mensagem de texto simples. `opts.instance` permite outra instância (ex.: comunidade). */
 async function sendText(number, text, opts = {}) {
   const instance = opts.instance || config.evolution.instance;
   const { data } = await http.post(`/message/sendText/${instance}`, {
-    number: toNumber(number),
+    number: await destino(number, instance),
     text,
   });
   return data;
@@ -46,7 +100,7 @@ async function sendText(number, text, opts = {}) {
 async function sendPresence(number, presence = 'composing', opts = {}) {
   const instance = opts.instance || config.evolution.instance;
   const { data } = await http.post(`/chat/sendPresence/${instance}`, {
-    number: toNumber(number),
+    number: await destino(number, instance),
     presence,
   });
   return data;
@@ -182,7 +236,7 @@ async function portaoDoGrupo(groupJid, aberto, opts = {}) {
 async function sendList(number, { title, description, buttonText, footer, rows }, opts = {}) {
   const instance = opts.instance || config.evolution.instance;
   const { data } = await http.post(`/message/sendList/${instance}`, {
-    number: toNumber(number),
+    number: await destino(number, instance),
     title,
     description,
     buttonText,
@@ -196,7 +250,7 @@ async function sendList(number, { title, description, buttonText, footer, rows }
 async function sendMedia(number, { mediatype, mimetype, media, caption, fileName }, opts = {}) {
   const instance = opts.instance || config.evolution.instance;
   const { data } = await http.post(`/message/sendMedia/${instance}`, {
-    number: toNumber(number),
+    number: await destino(number, instance),
     mediatype, // 'image' | 'document' | 'video'
     ...(mimetype ? { mimetype } : {}),
     media, // URL ou base64
@@ -234,6 +288,8 @@ async function getBase64FromMediaMessage(rawMessage, opts = {}) {
 module.exports = {
   http,
   toNumber,
+  destino,
+  _cacheJid: cacheJid,
   sendText,
   sendPresence,
   sendMedia,
