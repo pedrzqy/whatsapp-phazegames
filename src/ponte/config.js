@@ -97,6 +97,12 @@ module.exports = {
     avisoCongeladoMin: num(process.env.PONTE_AVISO_CONGELADO_MIN, 30),
   },
 
+  // Depois do código entregue: vídeo de instalação + pedido de avaliação no
+  // grupo oficial. 'false' desliga. O link do grupo vem de STORE_GROUP_URL.
+  tutorialVideo: process.env.PONTE_TUTORIAL_VIDEO !== 'false',
+  // Pausa entre o vídeo e o pedido de avaliação.
+  tutorialAvaliacaoMs: num(process.env.PONTE_TUTORIAL_AVALIACAO_MS, 8000),
+
   // Chave que o braço usa para autenticar nas rotas /ponte/braco/*.
   bracoApiKey: process.env.PONTE_BRACO_KEY || '',
 

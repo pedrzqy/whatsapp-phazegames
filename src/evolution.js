@@ -167,14 +167,20 @@ async function sendList(number, { title, description, buttonText, footer, rows }
 }
 
 /** Envia mídia (imagem/documento) por URL. `opts.instance` permite outra instância. */
-async function sendMedia(number, { mediatype, media, caption, fileName }, opts = {}) {
+async function sendMedia(number, { mediatype, mimetype, media, caption, fileName }, opts = {}) {
   const instance = opts.instance || config.evolution.instance;
   const { data } = await http.post(`/message/sendMedia/${instance}`, {
     number: toNumber(number),
     mediatype, // 'image' | 'document' | 'video'
+    ...(mimetype ? { mimetype } : {}),
     media, // URL ou base64
     caption,
     fileName,
+  }, {
+    // Vídeo em base64 passa dos 7 MB: o timeout de 20s do cliente não basta.
+    timeout: mediatype === 'video' ? 120000 : undefined,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
   });
   return data;
 }

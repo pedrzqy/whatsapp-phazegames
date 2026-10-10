@@ -216,6 +216,26 @@ async function processJob(job) {
     return;
   }
 
+  // VÍDEO → como o arquivo: sempre lança quando falha, sem cair para texto
+  // (a legenda é o texto; quem chama decide o que fazer se o vídeo não sair).
+  if (opts.video) {
+    await evolution.sendMedia(
+      number,
+      {
+        mediatype: 'video',
+        mimetype: 'video/mp4',
+        media: opts.video,
+        caption: text,
+        fileName: opts.fileName || 'video.mp4',
+      },
+      evoOpts,
+    );
+    const tv = Date.now();
+    lastGlobalSendAt = tv;
+    lastContactSendAt.set(number, tv);
+    return;
+  }
+
   // Com imagem → card de mídia. Se opts.imageOnly, NÃO cai pra texto (lança).
   if (opts.image) {
     try {

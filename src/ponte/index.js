@@ -892,6 +892,9 @@ async function entregarCodigo(atendimento, cod) {
   console.log(`[ponte] código ${cod} entregue a ${atendimento.from} (${atendimento.usuario})`);
   limites.registrarSucesso();
 
+  // Só chega aqui se o envio acima não lançou. Sem await: não segura a fila.
+  require('./tutorial').agendar(atendimento);
+
   await fila.concluir(atendimento.id, 'codigo_entregue');
   await promoverProximo();
 }

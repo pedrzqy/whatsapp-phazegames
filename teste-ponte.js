@@ -54,6 +54,9 @@ for (const k of [
 }
 
 process.env.PONTE_ATIVA = 'true';
+// O pos-codigo (video + avaliacao) tem bloco proprio de teste; nos demais fica fora.
+process.env.PONTE_TUTORIAL_VIDEO = 'false';
+process.env.PONTE_TUTORIAL_AVALIACAO_MS = '0';
 process.env.PONTE_OPERADOR_NUMERO = '5541999999999';
 process.env.PONTE_BRACO_KEY = 'teste';
 process.env.PONTE_SELLER_CHAT_TITLE = '山王电玩';
@@ -3752,6 +3755,88 @@ const OP = '5541999999999';
       !saiuO.some((s) => s.para === '5541922220077'));
     t('  e continua na vez', filaMod.ativo() && filaMod.ativo().from === '5541922220077');
     t('  operador e avisado', saiuO.some((s) => s.para === OP && /555444/.test(s.texto)));
+  }
+
+  // ── Pós-código: vídeo de instalação + pedido de avaliação ──
+  bloco('pos-codigo: video de instalacao e pedido de avaliacao');
+  {
+    const filaMod = require('./src/ponte/fila');
+    const tutorialMod = require('./src/ponte/tutorial');
+    const cfgMod = require('./src/ponte/config');
+    const senderT = require('./src/sender');
+    const antesT = senderT.send;
+    const saiuT = [];
+    let videoFalha = false;
+    let codigoFalha = false;
+    senderT.send = async (para, txt, opts = {}) => {
+      if (opts.video && videoFalha) throw new Error('video recusado');
+      if (!opts.video && codigoFalha && /Chegou o código/.test(String(txt))) throw new Error('envio do codigo falhou');
+      saiuT.push({ para, texto: String(txt), video: Boolean(opts.video) });
+    };
+    const esperarT = () => new Promise((r) => setTimeout(r, 30));
+    const novo = async (tel, usuario) => {
+      estadoPonte.dados.atendimentos = [];
+      const r = await filaMod.entrar(tel, 'Teste');
+      r.atendimento.usuario = usuario;
+      return r.atendimento;
+    };
+    cfgMod.tutorialVideo = true;
+    try {
+      const tel = '5541933330001';
+      await novo(tel, 'tuto0001');
+      await ponteMod.receberDoFornecedor({ texto: '482913' });
+      await esperarT();
+      const meus = saiuT.filter((s) => s.para === tel);
+      const iCod = meus.findIndex((s) => /482913/.test(s.texto));
+      const iVid = meus.findIndex((s) => s.video);
+      const iAval = meus.findIndex((s) => /avaliação/.test(s.texto));
+      t('codigo entregue, depois video, depois avaliacao', iCod === 0 && iVid === 1 && iAval === 2, JSON.stringify(meus.map((m) => m.video ? 'video' : m.texto.slice(0, 12))));
+      t('  legenda do video e o tutorial', /Tutorial de instalação/.test(meus[iVid]?.texto || ''));
+      t('  avaliacao nao leva link e oferece adicionar ao grupo', !/https?:/.test(meus[iAval]?.texto || '') && /te adiciono/.test(meus[iAval]?.texto || ''));
+
+      // Duplicata: mesmo atendimento pedindo de novo nao reenvia.
+      const atD = await novo('5541933330002', 'tuto0002');
+      const p1 = tutorialMod.agendar(atD);
+      const p2 = tutorialMod.agendar(atD);
+      await p1;
+      t('segundo disparo no mesmo atendimento e ignorado', p1 && p2 === null);
+      t('  video saiu uma vez so', saiuT.filter((s) => s.para === '5541933330002' && s.video).length === 1);
+
+      // Video falha: avaliacao sai mesmo assim e a fila anda.
+      videoFalha = true;
+      saiuT.length = 0;
+      const tel3 = '5541933330003';
+      await novo(tel3, 'tuto0003');
+      await ponteMod.receberDoFornecedor({ texto: '700100' });
+      await esperarT();
+      const m3 = saiuT.filter((s) => s.para === tel3);
+      t('video falhou: codigo entregue', m3.some((s) => /700100/.test(s.texto)));
+      t('  avaliacao sai mesmo assim', m3.some((s) => /avaliação/.test(s.texto)));
+      t('  fila nao ficou presa', !filaMod.ativo());
+      videoFalha = false;
+
+      // Envio do codigo falhou: nada de tutorial.
+      codigoFalha = true;
+      saiuT.length = 0;
+      const tel4 = '5541933330004';
+      await novo(tel4, 'tuto0004');
+      try { await ponteMod.receberDoFornecedor({ texto: '700200' }); } catch { /* esperado */ }
+      await esperarT();
+      t('codigo nao saiu: sem video nem avaliacao', !saiuT.some((s) => s.para === tel4 && (s.video || /avaliação/.test(s.texto))));
+      codigoFalha = false;
+
+      // Desligado por env.
+      cfgMod.tutorialVideo = false;
+      saiuT.length = 0;
+      const tel5 = '5541933330005';
+      await novo(tel5, 'tuto0005');
+      await ponteMod.receberDoFornecedor({ texto: '700300' });
+      await esperarT();
+      t('PONTE_TUTORIAL_VIDEO=false: so o codigo', saiuT.filter((s) => s.para === tel5).length === 1);
+    } finally {
+      senderT.send = antesT;
+      cfgMod.tutorialVideo = false;
+    }
   }
 
   evolutionMod.estadoInstancia = estadoReal;

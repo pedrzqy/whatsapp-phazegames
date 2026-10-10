@@ -84,4 +84,12 @@ function opcoes(qual) {
   return bytes ? { image: bytes, fileName: escolha[1] } : {};
 }
 
-module.exports = { telaDoConsole, primeiroLogin, opcoes };
+/**
+ * Vídeo do passo a passo de instalação do jogo no Switch (5,6 MB).
+ *
+ * Mesmo mecanismo das imagens: lido do disco uma vez, base64 na requisição.
+ * Vai depois do código entregue (ver ponte/tutorial.js).
+ */
+const tutorialInstalacao = () => carregar('tutorial-instalacao.mp4');
+
+module.exports = { telaDoConsole, primeiroLogin, tutorialInstalacao, opcoes };
