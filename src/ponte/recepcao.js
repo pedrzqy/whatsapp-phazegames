@@ -355,6 +355,15 @@ function esperandoVez() {
 }
 
 /**
+ * O registro de quem espera a vez na entrada (para o aviso de avanço da fila),
+ * ou null. Devolve o objeto vivo (quem muda os flags persiste).
+ */
+function itemDaEspera(from) {
+  const item = pendentes()[from];
+  return item && item.etapa === 'esperando_vez' ? item : null;
+}
+
+/**
  * Esvazia a espera da entrada e devolve quem estava nela.
  *
  * É a metade do `#limpar fila` que faltava: o comando só olhava o fila.js, e o
@@ -499,6 +508,10 @@ function abrir(from, responder, guardado) {
       usuario: null,
       imagem: null,
       etapa: 'esperando_vez',
+      // O que ele ouviu de posição: base do aviso de avanço (avanco.js).
+      aFrenteAvisado: aFrente,
+      avisoPerto: false,
+      avisoProximo: false,
     });
   }
 
@@ -575,5 +588,5 @@ module.exports = {
   // A outra metade da fila: quem foi barrado na entrada e ainda nao entregou
   // nada. Quem chama e o promoverProximo do index.js, no mesmo gancho que ja
   // avisava a vez de quem esta na fila.
-  chamarProximoDaEspera, esperandoVez, quantosNaFrente, limparEspera,
+  chamarProximoDaEspera, esperandoVez, itemDaEspera, quantosNaFrente, limparEspera,
 };

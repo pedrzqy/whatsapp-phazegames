@@ -3839,6 +3839,210 @@ const OP = '5541999999999';
     }
   }
 
+  // ── Avanço da fila, alerta do braço no grupo, desculpa na expiração ──
+  bloco('fila avisa o avanço, braço parado vai ao grupo, expiração pede desculpa');
+  {
+    const filaMod = require('./src/ponte/fila');
+    const cfgMod = require('./src/ponte/config');
+    const avancoMod = require('./src/ponte/avanco');
+    const grupoMod = require('./src/ponte/alertaGrupo');
+    const senderV = require('./src/sender');
+    const antesV = senderV.send;
+    const dd = estadoPonte.dados;
+    const GRUPO = '120363111111111111@g.us';
+    const OPV = '5541999999999';
+    let saiu = [];
+    senderV.send = async (para, texto) => { saiu.push({ para, texto: String(texto) }); };
+    const para = (tel, re) => saiu.filter((s) => s.para === tel && (!re || re.test(s.texto)));
+    const noGrupo = (re) => para(GRUPO, re);
+    const zerarV = () => {
+      limitesMod.fechar('operador');
+      base += 20; // número novo a cada cenário: a cota por cliente/hora é real
+      Object.assign(dd, { atendimentos: [], tarefas: [], aprovacoes: [], pendentes: {}, alertaGrupo: {}, grupoVendas: GRUPO });
+      dd.coletaVistaEm = Date.now();
+      saiu = [];
+    };
+    let base = 0;
+    const cli = (n) => `5541988${String(1000 + base + n)}`;
+    const entrarV = async (n) => (await ponteMod.pedirCodigo(cli(n), `Cli${n}`, `usuario${n}x`, null));
+    const PROX = /Agora você é o \*próximo\*/;
+
+    // ── A) avanço da fila ──
+    for (let n = 1; n <= 6; n++) await entrarV(n); // 1 ativo, 2..6 esperando (1..5 na frente)
+    saiu = [];
+    await avancoMod.avisar();
+    t('A: fila parada, ninguém recebe aviso', saiu.length === 0, JSON.stringify(saiu));
+
+    await filaMod.concluir(filaMod.ativo().id, 'concluido'); // 2 vira ativo
+    await avancoMod.avisar();
+    t('A: quem tinha 1 atrás do ativo recebe "próximo"', para(cli(3), PROX).length === 1);
+    t('A: quem ouviu 3 e agora tem 2 não recebe nada', para(cli(4)).length === 0);
+    t('A: quem ouviu 4 e agora tem 3 recebe o aviso de "perto"', para(cli(5), /3 pessoas/).length === 1,
+      JSON.stringify(para(cli(5))));
+    t('A: quem ouviu 5 e agora tem 4 segue quieto', para(cli(6)).length === 0);
+    await avancoMod.avisar();
+    await avancoMod.avisar();
+    t('A: idempotente, nada repete', para(cli(3)).length === 1 && para(cli(5)).length === 1);
+
+    await filaMod.concluir(filaMod.ativo().id, 'concluido'); // 3 vira ativo
+    await avancoMod.avisar();
+    t('A: avisa o próximo seguinte', para(cli(4), PROX).length === 1);
+    t('A: quem já foi avisado de "perto" não ganha outro', para(cli(5)).length === 1);
+    t('A: ouviu 5, agora 3: aviso de "perto"', para(cli(6), /3 pessoas/).length === 1);
+    t('A: texto do próximo é o combinado',
+      para(cli(4))[0]?.texto === 'Agora você é o *próximo* 👀 Fica de olho aqui que já já é sua vez.');
+
+    // Congelado: ninguém fala, e ao voltar fala uma vez.
+    limitesMod.abrir('teste', null, { automatico: false });
+    saiu = [];
+    await filaMod.concluir(filaMod.ativo().id, 'concluido'); // 4 vira ativo; 5 é o próximo
+    await avancoMod.avisar();
+    t('A: congelado não manda aviso de avanço', saiu.length === 0, JSON.stringify(saiu));
+    limitesMod.fechar('operador');
+    await avancoMod.avisar();
+    t('A: ao voltar, avisa o próximo uma vez', para(cli(5), PROX).length === 1);
+    t('A: no máximo 2 avisos extras por atendimento',
+      dd.atendimentos.every((a) => (a.avisoPerto ? 1 : 0) + (a.avisoProximo ? 1 : 0) <= 2));
+    t('A: flags persistidos no atendimento', dd.atendimentos.some((a) => a.avisoProximo === true));
+
+    // Espera na entrada (esperando_vez).
+    zerarV();
+    await entrarV(1); await entrarV(2); await entrarV(3); // 1 ativo, 2 e 3 aguardando
+    const rX = recepcao.avaliar(cli(10), 'preciso do codigo', null);
+    dd.pendentes[cli(10)].em -= 10; // o relógio não distingue duas chamadas no mesmo ms
+    const rY = recepcao.avaliar(cli(11), 'preciso do codigo', null);
+    t('A: entrada barrada com N na frente', /3 pessoas/.test(rX.mensagem) && /4 pessoas/.test(rY.mensagem),
+      JSON.stringify([rX.mensagem, rY.mensagem]));
+    saiu = [];
+    await filaMod.concluir(filaMod.ativo().id, 'concluido'); // 2 ativo; 3 aguarda
+    await avancoMod.avisar();
+    t('A: espera: quem ouviu 3 e agora tem 2 segue quieto', para(cli(10)).length === 0);
+    t('A: espera: quem ouviu 4 e agora tem 3 recebe "perto"', para(cli(11), /3 pessoas/).length === 1);
+    await filaMod.concluir(filaMod.ativo().id, 'concluido'); // 3 ativo; fila só o ativo
+    await avancoMod.avisar();
+    t('A: espera: o primeiro da entrada vira "próximo"', para(cli(10), PROX).length === 1);
+    t('A: espera: o segundo (2 na frente) não repete', para(cli(11)).length === 1);
+    await avancoMod.avisar();
+    t('A: espera: idempotente', para(cli(10)).length === 1 && para(cli(11)).length === 1);
+    t('A: espera: flags persistidos no registro', dd.pendentes[cli(10)].avisoProximo === true);
+
+    // ── B) braço parado no grupo ──
+    zerarV();
+    await entrarV(1); await entrarV(2);
+    saiu = [];
+    await ponteMod.bloqueioDetectado('verificação anti-bot detectada', null);
+    t('B: captcha avisa o operador como sempre', para(OPV, /Verificação na tela/).length === 1);
+    t('B: e avisa o grupo da equipe', noGrupo(/Envio de código travado/).length === 1, JSON.stringify(saiu.map((s) => s.para)));
+    const msgB = noGrupo(/Envio de código travado/)[0]?.texto || '';
+    t('B: diz quantos esperam e o que fazer', /2 clientes esperando/.test(msgB) && /#liberar/.test(msgB) && /captcha/.test(msgB), msgB);
+    await ponteMod.bloqueioDetectado('verificação anti-bot detectada', null);
+    await grupoMod.vigiar();
+    await ponteMod.tick();
+    t('B: um alerta por incidente', noGrupo(/Envio de código travado/).length === 1);
+    limitesMod.fechar('operador');
+    await grupoMod.vigiar();
+    t('B: resolvido, uma mensagem de "liberado"', noGrupo(/Envio liberado/).length === 1);
+    await grupoMod.vigiar();
+    t('B: e só uma', noGrupo(/Envio liberado/).length === 1);
+
+    // Congelamento automático que vira manual também chama o grupo.
+    saiu = [];
+    limitesMod.abrir('falhas', null, { automatico: true });
+    t('B: congelamento automático sozinho não aciona o grupo', noGrupo().length === 0);
+    await ponteMod.bloqueioDetectado('verificação anti-bot detectada', null);
+    t('B: virou manual: aciona o grupo', noGrupo(/Envio de código travado/).length === 1);
+    limitesMod.fechar('operador');
+    await grupoMod.vigiar();
+
+    // Desligado por env / sem grupo.
+    saiu = [];
+    cfgMod.alertaGrupo = false;
+    await ponteMod.bloqueioDetectado('verificação anti-bot detectada', null);
+    t('B: PONTE_ALERTA_GRUPO=false: só o operador', noGrupo().length === 0 && para(OPV, /Verificação na tela/).length === 1);
+    cfgMod.alertaGrupo = true;
+    limitesMod.fechar('operador');
+    await grupoMod.vigiar();
+    dd.grupoVendas = 'off';
+    saiu = [];
+    await ponteMod.bloqueioDetectado('verificação anti-bot detectada', null);
+    t('B: sem grupo configurado, não duplica no operador', para(OPV, /Envio de código travado/).length === 0 && para(OPV, /Verificação na tela/).length === 1);
+    limitesMod.fechar('operador');
+    dd.grupoVendas = GRUPO;
+    await grupoMod.vigiar();
+
+    // Braço mudo.
+    zerarV();
+    await entrarV(1);
+    dd.tarefas = [];
+    dd.coletaVistaEm = Date.now() - 3 * 60_000;
+    await grupoMod.vigiar();
+    t('B: 3 min de silêncio (< 5) não alerta', noGrupo().length === 0);
+    dd.coletaVistaEm = Date.now() - 6 * 60_000;
+    await grupoMod.vigiar();
+    t('B: mudo há mais de 5 min com cliente esperando alerta o grupo', noGrupo(/sem resposta há 6 min/).length === 1,
+      JSON.stringify(saiu.map((s) => s.texto.slice(0, 30))));
+    t('B: o alerta diz quantos esperam e o que fazer', /1 cliente esperando/.test(noGrupo()[0]?.texto || '') && /reiniciar/.test(noGrupo()[0]?.texto || ''));
+    await grupoMod.vigiar();
+    t('B: mudo não repete', noGrupo(/sem resposta/).length === 1);
+    dd.coletaVistaEm = Date.now();
+    await grupoMod.vigiar();
+    t('B: voltou: uma mensagem de "de volta"', noGrupo(/Sistema de código de volta/).length === 1);
+    await grupoMod.vigiar();
+    t('B: e só uma', noGrupo(/Sistema de código de volta/).length === 1);
+    zerarV();
+    dd.coletaVistaEm = Date.now() - 20 * 60_000;
+    await grupoMod.vigiar();
+    t('B: mudo sem ninguém esperando não alerta', noGrupo().length === 0);
+    await entrarV(1);
+    dd.tarefas = [{ id: 'x', estado: 'executando', pegaEm: Date.now() - 60_000, atendimentoId: 0 }];
+    await grupoMod.vigiar();
+    t('B: braço executando tarefa não é silêncio', noGrupo().length === 0);
+    dd.tarefas = [];
+    cfgMod.bracoMudoMin = 30;
+    await grupoMod.vigiar();
+    t('B: PONTE_BRACO_MUDO_MIN é respeitado', noGrupo().length === 0);
+    cfgMod.bracoMudoMin = 5;
+
+    // ── C) desculpa ao expirar ──
+    zerarV();
+    await entrarV(1);
+    filaMod.ativo().expiraEm = Date.now() - 1000;
+    saiu = [];
+    await ponteMod.tick();
+    t('C: expirou: o operador é avisado', para(OPV, /expirou sem código/).length === 1);
+    const pedido = para(cli(1), /desculpa/);
+    t('C: o cliente recebe o pedido de desculpa com o #inicio', pedido.length === 1 && /#inicio/.test(pedido[0].texto), JSON.stringify(para(cli(1))));
+    t('C: texto exato', pedido[0]?.texto ===
+      'Poxa, me desculpa 😔 Não consegui pegar o seu código dessa vez.\n\n' +
+      'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚');
+    t('C: uma mensagem só ao cliente', para(cli(1)).length === 1);
+    await ponteMod.tick();
+    t('C: tick seguinte não repete', para(cli(1), /desculpa/).length === 1);
+
+    // Sem login entregue (abandonou no meio): sem pedido de desculpa.
+    zerarV();
+    const rD = await filaMod.entrar(cli(2), 'Cli2');
+    rD.atendimento.usuario = null;
+    rD.atendimento.expiraEm = Date.now() - 1000;
+    saiu = [];
+    await ponteMod.tick();
+    t('C: sem login entregue não pede desculpa', para(cli(2), /desculpa/).length === 0);
+
+    // Congelado: ninguém expira, ninguém ouve desculpa.
+    zerarV();
+    await entrarV(3);
+    filaMod.ativo().expiraEm = Date.now() - 1000;
+    limitesMod.abrir('teste', null, { automatico: false });
+    saiu = [];
+    await ponteMod.tick();
+    t('C: congelado não pede desculpa', para(cli(3), /desculpa/).length === 0);
+    limitesMod.fechar('operador');
+
+    senderV.send = antesV;
+    zerarV();
+    dd.grupoVendas = 'off';
+  }
+
   evolutionMod.estadoInstancia = estadoReal;
   nerixMod.getStore = lojaReal;
 

@@ -103,6 +103,12 @@ module.exports = {
   // Pausa entre o vídeo e o pedido de avaliação.
   tutorialAvaliacaoMs: num(process.env.PONTE_TUTORIAL_AVALIACAO_MS, 8000),
 
+  // Alerta de braço parado (captcha/login perdido, ou sem contato) também no
+  // grupo da equipe. 'false' desliga; o operador no privado segue avisado.
+  alertaGrupo: process.env.PONTE_ALERTA_GRUPO !== 'false',
+  // Minutos sem NENHUM contato do braço, com cliente esperando, para alertar o grupo.
+  bracoMudoMin: num(process.env.PONTE_BRACO_MUDO_MIN, 5),
+
   // Chave que o braço usa para autenticar nas rotas /ponte/braco/*.
   bracoApiKey: process.env.PONTE_BRACO_KEY || '',
 

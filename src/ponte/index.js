@@ -132,6 +132,8 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
 
   const { atendimento, ativo, aFrente } = await fila.entrar(from, nome);
   atendimento.usuario = usuario;
+  // O que ele ouve de posição agora: base do aviso de avanço (avanco.js).
+  if (!ativo && atendimento.aFrenteAvisado == null) atendimento.aFrenteAvisado = aFrente;
   if (imagemPath) atendimento.imagemPendente = imagemPath;
   persistAgora();
 
@@ -1394,6 +1396,7 @@ async function bloqueioDetectado(motivo, printPath) {
   dd.ultimoAvisoEm = Date.now();
   dd.lembretes = 0;
   persistAgora();
+  await require('./alertaGrupo').bloqueio(motivo, printPath);
 }
 
 // ============================================================
@@ -1530,20 +1533,30 @@ async function vigiarColeta() {
   await alertar('🔌 *Coleta de volta.* Os envios seguem normalmente.');
 }
 
+const MSG_EXPIROU_PADRAO =
+  'Seu código está demorando mais que o normal. Já estou vendo isso — ' +
+  'se preferir, posso te passar pra um atendente 👍';
+
+const MSG_DESCULPA_EXPIROU =
+  'Poxa, me desculpa 😔 Não consegui pegar o seu código dessa vez.\n\n' +
+  'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚';
+
 async function tick() {
   try {
     await vigiarColeta();
     await vigiarCongelamento();
+    await require('./alertaGrupo').vigiar();
 
     // Congelado, ninguém expira: o cliente não está sem resposta por culpa
     // dele nem do outro lado, e o prazo é empurrado quando os envios voltam.
     const vencidos = limites.disjuntor().estado === 'aberto' ? [] : await fila.expirarVencidos();
     for (const v of vencidos) {
-      await sender.send(
-        v.from,
-        'Seu código está demorando mais que o normal. Já estou vendo isso — ' +
-          'se preferir, posso te passar pra um atendente 👍',
-      );
+      // Pediu e esperou por nós (foto + login entregues): pede desculpa e diz
+      // como recomeçar. Quem abandonou no meio nem chega à fila, então o que
+      // expira aqui sempre esperou por nós; o `usuario` fica como trava.
+      // Congelado nem entra neste laço (acima), mas a checagem fica explícita.
+      const desculpa = Boolean(v.usuario) && limites.disjuntor().estado !== 'aberto';
+      await sender.send(v.from, desculpa ? MSG_DESCULPA_EXPIROU : MSG_EXPIROU_PADRAO);
       await alertar(`⏱️ Atendimento de *${v.nome}* (\`${v.usuario}\`) expirou sem código.`);
     }
     // Fila vazia com gente parada na entrada: ninguém ia chamá-los (o gancho
@@ -1551,6 +1564,8 @@ async function tick() {
     // até 2h. O tick acorda a espera.
     const parados = !fila.ativo() && require('./recepcao').esperandoVez().length > 0;
     if (vencidos.length || parados) await promoverProximo();
+    // Por último: as posições já refletem expiração e promoção deste tick.
+    await require('./avanco').avisar();
   } catch (err) {
     console.error('[ponte/tick] erro:', err.message);
   }
