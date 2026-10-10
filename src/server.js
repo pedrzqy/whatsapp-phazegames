@@ -369,6 +369,7 @@ const server = ehOPrograma && app.listen(config.port, () => {
   recovery.start(); // recuperação de venda: cutuca quem sumiu no meio da conversa
   community.start(); // agente de comunidade: posta conteúdo no grupo (Fase 1: só saída)
   ponte.iniciar(); // ponte com o fornecedor da Taobao (fila serial + braço robô)
+  require('./resumo').iniciar(); // resumo do dia no grupo da equipe, uma vez por noite
   vendas.iniciar(); // ciclo de venda: cutuca quem gerou pagamento e não pagou
   posvenda.iniciar(); // depois da entrega: pergunta se ativou · reativa quem sumiu
 });

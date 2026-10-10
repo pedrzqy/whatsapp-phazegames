@@ -800,6 +800,127 @@ const CLI = '5541999998888';
     await op.executar('#staff off', OP);
   }
 
+  // ── Resumo do dia ─────────────────────────────────────────────
+  bloco('resumo do dia');
+  {
+    const GRUPO = '120363000000000002@g.us';
+    const GRUPO_OFICIAL = '120363000000000099@g.us';
+    const resumo = require('./src/resumo');
+    const op = require('./src/ponte/operador');
+    const evo = require('./src/evolution');
+    const cfgC = require('./src/config').community;
+    cfgC.groupJid = GRUPO_OFICIAL;
+    let membros = 100;
+    evo.contarParticipantes = async () => membros;
+
+    const pagar = async (n, total) => {
+      pedidoFalso = pedido({ order_number: n, total });
+      await vendas.onEvento({ event: 'order.paid', data: { order_number: n } });
+    };
+    const hoje = () => new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    const as = (h) => Date.parse(`${hoje()}T${h}:00-03:00`);
+    const qtdDe = (txt) => Number((txt.match(/Vendas: \*(\d+)\*/) || [])[1]);
+    const antes = qtdDe((await resumo.montar()).texto);
+
+    await pagar('ped-r1', 100);
+    await pagar('ped-r1', 100); // webhook repetido: não conta duas vezes
+    await pagar('ped-r2', 50.5);
+    const cheio = (await resumo.montar()).texto;
+    t('conta as vendas pagas do dia, uma vez por pedido', qtdDe(cheio) === antes + 2, cheio.split('\n')[2]);
+    t('  e soma o valor em reais', /R\$ [\d.]+,\d\d\)/.test(cheio));
+
+    // Membros: diferença para o retrato anterior.
+    resumo._estado().retrato = { n: 92, em: Date.now() - 24 * 3600 * 1000 };
+    t('membros novos = diferença para o retrato de ontem', /Membros novos no grupo: \*\+8\*/.test((await resumo.montar()).texto));
+    resumo._estado().retrato = { n: 103, em: Date.now() - 24 * 3600 * 1000 };
+    t('  saldo negativo aparece com sinal', /\*-3\*/.test((await resumo.montar()).texto));
+    membros = null;
+    t('  sem dado da Evolution: diz "sem dados"', /sem dados/.test((await resumo.montar()).texto));
+    membros = 100;
+    resumo._estado().retrato = { n: 92, em: Date.now() - 24 * 3600 * 1000 };
+
+    // Quando sai.
+    vendas.definirGrupoVendas(GRUPO);
+    enviadas = [];
+    t('antes da hora não sai', (await resumo.tick(as('22:30'))) === false && enviadas.length === 0);
+    t('na hora, sai', (await resumo.tick(as('23:05'))) === true);
+    const env = enviadas.filter((e) => e.para === GRUPO && /Resumo do dia/.test(e.texto));
+    t('  vai para o grupo da equipe', env.length === 1);
+    t('  traz membros, vendas e rodapé', /\*\+8\*/.test(env[0]?.texto) && /Vendas: \*/.test(env[0]?.texto) && /Bom descanso/.test(env[0]?.texto));
+    t('  segunda volta no mesmo dia não repete', (await resumo.tick(as('23:40'))) === false && enviadas.length === 1);
+    resumo._recarregar(); // "reinício": o estado vem do disco
+    t('  nem depois de reiniciar', (await resumo.tick(as('23:50'))) === false && enviadas.length === 1);
+    t('  e o retrato de hoje virou a base de amanhã', resumo._estado().retrato.n === 100);
+
+    // Sem grupo da equipe: cai no privado do operador. Dia seguinte.
+    vendas.definirGrupoVendas('off');
+    enviadas = [];
+    const amanha = as('23:10') + 24 * 3600 * 1000;
+    t('no dia seguinte sai de novo', (await resumo.tick(amanha)) === true);
+    t('  sem grupo, vai ao privado do operador', enviadas.some((e) => e.para === OP && /Resumo do dia/.test(e.texto)));
+
+    // Desligado.
+    process.env.RESUMO_LIGADO = 'false';
+    enviadas = [];
+    t('RESUMO_LIGADO=false não envia', (await resumo.tick(amanha + 24 * 3600 * 1000)) === false && enviadas.length === 0);
+    delete process.env.RESUMO_LIGADO;
+
+    // #resumo: parcial, no privado, sem gastar o envio da noite.
+    const ultimo = resumo._estado().ultimoEnvio;
+    t('#resumo é reconhecido como comando do operador', op.ehComando(OP, '#resumo') === true);
+    const parc = await op.executar('#resumo', OP);
+    t('#resumo devolve o parcial', /Resumo parcial/.test(parc) && /Vendas: \*\d+\*/.test(parc));
+    t('  e não marca o dia como enviado', resumo._estado().ultimoEnvio === ultimo);
+  }
+
+  // ── Bom dia e boa noite do grupo ──────────────────────────────
+  bloco('bom dia e boa noite: variações');
+  {
+    const saud = require('./src/saudacoes');
+    const comunidade = require('./src/community');
+    const cfgC = require('./src/config').community;
+    t('pelo menos 20 bom dia', saud.DIA.length >= 20, String(saud.DIA.length));
+    t('pelo menos 20 boa noite', saud.NOITE.length >= 20, String(saud.NOITE.length));
+    t('sem texto repetido na lista', new Set(saud.DIA).size === saud.DIA.length && new Set(saud.NOITE).size === saud.NOITE.length);
+    t('todos passam pela peneira (vocabulário, tamanho, link)',
+      [...saud.DIA, ...saud.NOITE].every((x) => comunidade.saudacaoAprovada(x)));
+    t('todo bom dia diz bom dia; toda boa noite diz boa noite',
+      saud.DIA.every((x) => /bom dia|acordou/i.test(x)) && saud.NOITE.every((x) => /boa noite/i.test(x)));
+
+    // Sorteio: nunca uma das últimas 5.
+    let recentes = [];
+    let repetiu = false;
+    for (let i = 0; i < 400; i++) {
+      for (const tipo of ['dia', 'noite']) {
+        const { indice } = saud.sortear(tipo, recentes);
+        if (recentes.slice(-5).includes(indice)) repetiu = true;
+        recentes = [...recentes, indice].slice(-5);
+      }
+      recentes = [];
+    }
+    let seq = [];
+    for (let i = 0; i < 400; i++) {
+      const { indice } = saud.sortear('noite', seq);
+      if (seq.slice(-5).includes(indice)) repetiu = true;
+      seq = [...seq, indice].slice(-5);
+    }
+    t('o sorteio não repete nenhuma das últimas 5', !repetiu);
+
+    // Pelo caminho real (saudar): publica no grupo e guarda os índices.
+    cfgC.dryRun = false;
+    cfgC.groupJid = '120363000000000099@g.us';
+    enviadas = [];
+    for (let d = 1; d <= 12; d++) await comunidade.saudar('dia', `2030-01-${String(d).padStart(2, '0')}`);
+    await comunidade.saudar('dia', '2030-01-12'); // mesmo dia: trava
+    const textos = enviadas.map((e) => e.texto);
+    t('saudar publica uma por dia', textos.length === 12, String(textos.length));
+    t('  e nenhuma igual às 5 anteriores', textos.every((x, i) => !textos.slice(Math.max(0, i - 5), i).includes(x)));
+    enviadas = [];
+    await comunidade.saudar('noite', '2030-01-01');
+    t('boa noite sai com o aviso de que o grupo volta',
+      /boa noite/i.test(enviadas[0]?.texto || '') && /volta a abrir/.test(enviadas[0]?.texto || ''));
+  }
+
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));
   process.exit(falhas ? 1 : 0);
 })();

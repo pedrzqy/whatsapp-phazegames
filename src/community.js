@@ -23,6 +23,7 @@ const sender = require('./sender');
 const evolution = require('./evolution');
 const variator = require('./variator');
 const ai = require('./ai');
+const saudacoes = require('./saudacoes');
 
 const cfg = config.community;
 const STORE_URL = config.store.url;
@@ -425,20 +426,26 @@ async function ajustarPortao(hour) {
 
 // ─── Boa noite e bom dia ─────────────────────────────────────────────
 //
-// O pedido foi "nunca pode ser um texto igual, cada dia diferente". Isso
-// descarta uma lista fixa: por maior que ela seja, ela repete, e o dia em que
-// repetir é o dia em que a mensagem deixa de parecer escrita para alguém.
+// Os textos moram em saudacoes.js: listas escritas à mão (mais de vinte de cada),
+// sorteadas sem repetir nenhuma das últimas cinco. Antes o modelo escrevia a
+// mensagem na hora e saía poesia genérica, sem cara de loja de jogo. A lista
+// também não custa chamada de API nem falha.
 //
-// Então o texto é ESCRITO na hora pelo modelo barato. Duas chamadas por dia
-// custam frações de centavo, e é o único trabalho do bot que não tem pressa
-// nenhuma: se falhar, tem uma frase de reserva embaixo e ninguém percebe.
-//
-// O QUE ELE ESCREVE PASSA POR UMA PENEIRA antes de sair. É texto gerado indo
-// para um grupo com centenas de pessoas, sem ninguém ler antes — a mesma
-// situação que, no lado do fornecedor, a gente decidiu não permitir. Aqui é
-// aceitável porque o assunto é "bom dia": não tem preço, não tem promessa, não
-// tem dado de cliente. Mas as travas de vocabulário continuam valendo, e o
-// tamanho também.
+// A peneira abaixo continua valendo: o teste passa todo texto da lista por ela,
+// e assim ninguém acrescenta depois uma palavra barrada, um link ou um texto
+// fora do tamanho.
+
+/** Índices das últimas saudações de cada tipo, para o sorteio não repetir. */
+function saudacoesRecentes(tipo) {
+  const lista = state.saudacoesIdx?.[tipo];
+  return Array.isArray(lista) ? lista : [];
+}
+
+function guardarSaudacao(tipo, indice) {
+  state.saudacoesIdx = state.saudacoesIdx || {};
+  state.saudacoesIdx[tipo] = [...saudacoesRecentes(tipo), indice].slice(-saudacoes.JANELA);
+  saveState();
+}
 
 /** O que nunca pode sair, nem numa saudação. */
 function saudacaoAprovada(texto) {
@@ -455,74 +462,17 @@ function saudacaoAprovada(texto) {
   return t;
 }
 
-/** As últimas saudações, para o modelo não repetir o que já foi. */
-function saudacoesRecentes() {
-  return Array.isArray(state.saudacoes) ? state.saudacoes : [];
-}
-
-function guardarSaudacao(texto) {
-  state.saudacoes = [...saudacoesRecentes(), texto].slice(-30);
-  saveState();
-}
-
-const RESERVA = {
-  noite: 'Boa noite a todos 🌙 Que a noite traga descanso de verdade, e que amanhã comece melhor do que hoje terminou.',
-  dia: 'Bom dia, pessoal ☀️ Que hoje seja um dia leve, com tempo para o que importa e paciência para o resto.',
-};
-
-/**
- * Escreve a saudação do dia.
- *
- * O prompt pede o que o dono pediu: bonita, trabalhada, que respeite todo mundo
- * e simbolize o bem. "Respeitar todo mundo" virou regra explícita de não citar
- * religião, política nem time — num grupo de centenas de pessoas, o que para uma
- * é acolhimento, para outra é o motivo de sair.
- *
- * As últimas trinta vão no prompt para ele não repetir. É a forma barata de
- * cumprir "cada dia diferente" sem guardar lista nenhuma escrita à mão.
- */
-async function escreverSaudacao(tipo) {
-  const recentes = saudacoesRecentes().slice(-30);
-  const regras =
-    `Escreva UMA mensagem de ${tipo === 'noite' ? 'BOA NOITE' : 'BOM DIA'} para o grupo de ` +
-    `clientes de uma loja de jogos, em portugues do Brasil.\n\n` +
-    `Como tem que ser:\n` +
-    `- Curta: 2 a 4 linhas, no maximo.\n` +
-    `- Calorosa e bem escrita, com uma imagem ou um pensamento proprio. Nada de frase de calendario.\n` +
-    `- Que respeite TODO MUNDO: nada de religiao, politica, time de futebol nem nada que divida.\n` +
-    `- Do bem, sem ser piegas. Fala de descanso, recomeco, gentileza, seguir em frente.\n` +
-    `- NAO venda nada, nao cite preco, produto, promocao nem link.\n` +
-    `- No maximo 2 emojis.\n` +
-    `- Nao escreva titulo, aspas nem explicacao. So a mensagem.\n\n` +
-    (recentes.length
-      ? `JA FORAM USADAS estas, e a sua precisa ser DIFERENTE em ideia e em palavras:\n` +
-        recentes.map((s) => `- ${s.replace(/\n/g, ' ').slice(0, 120)}`).join('\n')
-      : '');
-
-  const msg = await ai.chat([{ role: 'user', content: regras }], { maxTokens: 400, barato: true });
-  return saudacaoAprovada(msg?.content);
-}
-
 /**
  * Manda a saudação do dia, se for a hora.
  *
  * `tipo` decide o texto; o horário quem decide é o chamador.
  */
 async function saudar(tipo, dateKey) {
+  state.slots = state.slots || {};
   const slot = `saudacao-${tipo}-${dateKey}`;
   if (state.slots[slot]) return; // já foi hoje
 
-  let texto = null;
-  try {
-    texto = await escreverSaudacao(tipo);
-  } catch (err) {
-    console.warn(`[community] saudacao de ${tipo} nao foi escrita: ${err.message}`);
-  }
-
-  // A reserva não é desistência: é a garantia de que o grupo nunca fica sem a
-  // mensagem por causa de um soluço do modelo. Ela repete, e tudo bem — repetir
-  // uma vez a cada muito tempo é diferente de repetir sempre.
-  if (!texto) texto = RESERVA[tipo];
+  const { texto, indice } = saudacoes.sortear(tipo, saudacoesRecentes(tipo));
 
   // A BOA NOITE avisa quando o grupo volta, e essa linha é escrita por código.
   // É informação, não poesia: quem tentar escrever meia-noite e não conseguir
@@ -533,7 +483,7 @@ async function saudar(tipo, dateKey) {
       : '';
 
   state.slots[slot] = Date.now();
-  guardarSaudacao(texto); // já salva o estado
+  guardarSaudacao(tipo, indice); // já salva o estado
   await publish(texto + rodape);
   console.log(`[community] saudacao de ${tipo} publicada`);
 }
@@ -727,4 +677,4 @@ function stop() { if (timer) { clearInterval(timer); timer = null; } }
 // A peneira das saudações vai exportada para o teste: é ela que decide o que de
 // texto GERADO chega num grupo de centenas de pessoas sem ninguém ler antes.
 // Sem alcançá-la, o teste dublaria justamente o que deveria estar medindo.
-module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, saudacaoAprovada, mexerNoPortao, estadoDoPortao, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
+module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, saudacaoAprovada, saudar, mexerNoPortao, estadoDoPortao, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };

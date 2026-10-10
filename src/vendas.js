@@ -198,10 +198,13 @@ async function carregar(evento) {
   }
 
   const fmt = formatOrder(cru);
+  const valor = Number(cru.total ?? cru.amount);
   return {
     codigo: fmt.codigo || codigo,
     status: fmt.status,
     total: fmt.total,
+    // O número, para o resumo do dia somar. `total` é texto formatado.
+    valor: Number.isFinite(valor) ? valor : null,
     pago: fmt.pago,
     itens: fmt.itens || [],
     link_pagamento: fmt.link_pagamento,
@@ -371,6 +374,13 @@ async function mandarPixNaHora(pedido) {
  */
 async function notificarVenda(pedido) {
   if (!marcar(pedido.codigo, 'notificado')) return;
+
+  // O valor fica junto do carimbo para o resumo do dia (resumo.js) somar sem
+  // pedir à Nerix de novo. A trava acima já garante uma vez por pedido.
+  if (Number.isFinite(pedido.valor)) {
+    dados.pedidos[String(pedido.codigo)].valor = pedido.valor;
+    persist();
+  }
 
   const { comChave, semChave } = separarPorChave(pedido.itens);
   const linhas = [`💰 *Venda paga* — ${pedido.total || 'valor não informado'}`, ''];
@@ -819,6 +829,7 @@ module.exports = {
   // arquivo, e as duas moram nestas funções.
   paraWhatsApp,
   grupoDeVendas,
+  avisarVenda,
   definirGrupoVendas,
   NOME_GRUPO_STAFF,
   /** Quando chegou o último evento da loja. 0 = nunca chegou nenhum. */

@@ -239,11 +239,8 @@ const config = {
 
     // Boa noite na hora de fechar, bom dia antes de abrir.
     //
-    // O texto e escrito na hora pelo modelo barato, e nunca se repete -- as
-    // ultimas trinta vao no prompt para ele nao reaproveitar ideia nem palavra.
-    // Lista fixa foi descartada de proposito: por maior que seja ela repete, e
-    // o dia em que repetir e o dia em que a mensagem deixa de parecer escrita
-    // para alguem.
+    // O texto vem de saudacoes.js (mais de 20 de cada), sorteado sem repetir as
+    // ultimas 5 usadas.
     saudacoesLigadas: process.env.COMMUNITY_SAUDACOES !== 'false',
     // Quantos minutos antes de abrir o bom dia sai. Com o grupo ainda fechado,
     // ele fica sozinho no topo quando as pessoas voltam.
