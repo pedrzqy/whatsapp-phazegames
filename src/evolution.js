@@ -66,6 +66,32 @@ async function fetchAllGroups(opts = {}) {
 }
 
 /**
+ * Quantos participantes tem o grupo, ou null se não deu para saber.
+ * Serve ao resumo do dia (membros novos = diferença entre dois retratos).
+ */
+async function contarParticipantes(groupJid, opts = {}) {
+  const instance = opts.instance || config.evolution.instance;
+  try {
+    const { data } = await http.get(`/group/participants/${instance}`, {
+      params: { groupJid },
+      timeout: 15000,
+    });
+    const lista = Array.isArray(data) ? data : data?.participants;
+    if (Array.isArray(lista)) return lista.length;
+  } catch { /* cai para a listagem completa abaixo */ }
+  try {
+    const { data } = await http.get(`/group/fetchAllGroups/${instance}`, {
+      params: { getParticipants: 'true' },
+      timeout: 30000,
+    });
+    const g = (Array.isArray(data) ? data : []).find((x) => x.id === groupJid);
+    if (g && Array.isArray(g.participants)) return g.participants.length;
+    if (g && Number.isFinite(g.size)) return g.size;
+  } catch { /* sem dado */ }
+  return null;
+}
+
+/**
  * O WhatsApp está conectado?
  *
  * Devolve o estado cru da instância ('open' = conectado). Serve ao #status: se
@@ -216,5 +242,6 @@ module.exports = {
   conectarInstancia,
   portaoDoGrupo,
   fetchAllGroups,
+  contarParticipantes,
   getBase64FromMediaMessage,
 };

@@ -38,6 +38,7 @@ const AJUDA = [
   '*#grupo* — abre ou fecha o grupo na mão, para testar o horário',
   '*#staff* — mande DENTRO do grupo da equipe: as vendas passam a ser avisadas lá · *#staff off* volta ao privado · *#staff teste*',
   '*#status* — testa tudo e diz o que está errado',
+  '*#resumo* — o resumo do dia até agora (o completo sai sozinho à noite no grupo da equipe)',
   '*#fila* — quem está sendo atendido e quem espera',
   '*#vendas* — vendas de hoje, faturamento e o que falta entregar',
   '*#liberar* — destrava depois de resolver a verificação',
@@ -70,7 +71,7 @@ const min = (ms) => Math.round(ms / 60000);
 // decidir e para logar o motivo de ter ignorado), e duas copias divergiriam --
 // que e como o "script" escapou do filtro de vocabulario uma vez.
 const RE_COMANDOS =
-  /^#(fila|status|vendas|historico|liberar|ok|enviar|editar|responder|casos|analisar|admin|nao|não|pular|ajuda|sms|taobao|teste|limpar|destravar|atender|auto|recarregar|grupo|staff)\b/i;
+  /^#(fila|status|vendas|historico|liberar|ok|enviar|editar|responder|casos|analisar|admin|nao|não|pular|ajuda|sms|taobao|teste|limpar|destravar|atender|auto|recarregar|grupo|staff|resumo)\b/i;
 
 /** É comando de operador? */
 function ehComando(from, texto) {
@@ -712,6 +713,8 @@ async function executar(texto, de = '', ctx = {}) {
   // Conta o que PRECISA DE AÇÃO separado do resto: pedido pago sem chave é
   // trabalho parado esperando alguém lembrar, e é o único número aqui que
   // pede uma atitude.
+  if (cmd === 'resumo') return require('../resumo').parcial();
+
   if (cmd === 'vendas') {
     let lista = [];
     try {
