@@ -61,15 +61,15 @@ function textoDaConferencia(nome) {
     `${primeiro ? `${primeiro}, t` : 'T'}udo certo com a ativação? 🎮
 
 ` +
-      `Se travou em alguma etapa, me conta aqui que eu resolvo com você.`,
-    `${primeiro ? `${primeiro}, c` : 'C'}omo foi a ativação do jogo? 🎮
+      `Se travou em alguma etapa, me conta aqui que eu resolvo com você. 💚🙌`,
+    `${primeiro ? `${primeiro}, c` : 'C'}omo foi a ativação do jogo? 🕹️
 
 ` +
-      `Se algo travou no caminho, me conta aqui que eu resolvo com você.`,
+      `Se algo travou no caminho, me conta aqui que eu resolvo com você. 😉 Pode mandar sem medo! 💪`,
     `${primeiro ? `${primeiro}, d` : 'D'}eu pra fazer a ativação direitinho? 😊
 
 ` +
-      `Qualquer etapa que travou, me conta aqui que eu resolvo com você.`,
+      `Qualquer etapa que travou, me conta aqui que eu resolvo com você. 🙌 Estou por aqui! 💚`,
   ];
   return marca.assinar(sortearTexto('conferencia', variantes));
 }
@@ -223,15 +223,15 @@ function textoDeReativacao(nome) {
 
 ` +
       `Chegou bastante coisa nova por aqui. Se quiser ver o que tem, é só me dizer ` +
-      `o jogo ou o console que eu procuro pra você.`,
+      `o jogo ou o console que eu procuro pra você. 🎮✨`,
     `${oi} Tudo bem por aí? 😄
 
 ` +
-      `Tem novidade na loja. Se quiser ver, me diz o jogo ou o console que eu busco pra você.`,
+      `Tem novidade na loja. 🔥 Se quiser ver, me diz o jogo ou o console que eu busco pra você. 🕹️`,
     `${oi} Passando pra dizer que chegou jogo novo por aqui 🎮
 
 ` +
-      `Se quiser dar uma olhada, é só me falar o jogo ou o console que eu procuro pra você.`,
+      `Se quiser dar uma olhada, é só me falar o jogo ou o console que eu procuro pra você. 😉👾`,
   ]));
 }
 

@@ -999,43 +999,53 @@ const CLI = '5541999998888';
     t('todo bom dia diz bom dia; toda boa noite diz boa noite',
       saud.DIA.every((x) => /bom dia|acordou/i.test(x)) && saud.NOITE.every((x) => /boa noite/i.test(x)));
 
-    // Pouco emoji: demais entrega que é robô. Uma saudação tem no máximo um,
-    // e emoji nunca fica no meio da frase.
+    // Emoji com gosto: o dono quer de 3 a 5 por mensagem (sem graça com pouco),
+    // mas sem emoji como separador de frase nem no começo de toda linha.
     const nEmoji = (x) => (String(x).match(/\p{Extended_Pictographic}/gu) || []).length;
-    t('toda saudação tem no máximo 1 emoji', [...saud.DIA, ...saud.NOITE].every((x) => nEmoji(x) <= 1));
-    t('  e emoji só no fim da mensagem, nunca no meio da frase',
-      [...saud.DIA, ...saud.NOITE].every((x) => !/\p{Extended_Pictographic}️? +\S/u.test(x)));
-    t('  e as saudações têm parágrafo', [...saud.DIA, ...saud.NOITE].filter((x) => x.includes('\n\n')).length >= 30);
+    const separador = (x) => /[\p{L}\p{N}] *\p{Extended_Pictographic}️? *\p{L}/u.test(x);
+    const todas = [...saud.DIA, ...saud.NOITE];
+    t('toda saudação tem de 3 a 6 emojis', todas.every((x) => nEmoji(x) >= 3 && nEmoji(x) <= 6),
+      todas.filter((x) => nEmoji(x) < 3 || nEmoji(x) > 6)[0]);
+    t('  e nenhum emoji serve de separador no meio da frase', todas.every((x) => !separador(x)));
+    t('  e nenhuma linha começa com emoji', todas.every((x) => x.split('\n').every((l) => !/^\p{Extended_Pictographic}/u.test(l))));
+    t('  e as saudações têm parágrafo', todas.every((x) => x.includes('\n\n')));
+    t('  e não usam sempre os mesmos emojis', new Set(todas.join('').match(/\p{Extended_Pictographic}/gu)).size >= 15);
     {
       const T = comunidade.TEXTOS;
-      t('toda variação de texto de post tem no máximo 1 emoji',
-        Object.values(T).flat().every((x) => nEmoji(x) <= 1));
+      t('nenhuma variação de texto de post passa de 2 emojis', Object.values(T).flat().every((x) => nEmoji(x) <= 2));
+      const posv = require('./src/posvenda');
+      const vp = [];
+      for (let i = 0; i < 40; i++) vp.push(posv.textoDaConferencia('Maria Silva'), posv.textoDeReativacao('Maria Silva'), posv.textoDaConferencia(''), posv.textoDeReativacao(''));
+      t('conferência e reativação do pós-venda têm de 3 a 6 emojis, sem separador',
+        vp.every((x) => nEmoji(x) >= 3 && nEmoji(x) <= 6 && !separador(x)), vp.find((x) => nEmoji(x) < 3 || nEmoji(x) > 6));
       const nerixE = require('./src/nerix');
       const newsE = require('./src/news');
-      const salvoE = { lc: nerixE.listCoupons, lp: nerixE.listProducts, io: newsE.imageOk };
+      const aiE = require('./src/ai');
+      const salvoE = { lc: nerixE.listCoupons, lp: nerixE.listProducts, io: newsE.imageOk, ln: newsE.fetchLatestNews, lr: newsE.fetchLatestReviews, tr: aiE.translate };
       nerixE.listCoupons = async () => ({ data: [{ code: 'PHAZE10', is_active: true, is_secret: false, type: 'percentage', value: 10 }] });
       nerixE.listProducts = async () => ({ data: [
         { name: 'Zelda - Mídia Digital - Nintendo Switch', price: 100, promotional_price: 80, sales_count: 9, slug: 'zelda', images: ['a.jpg'] },
         { name: 'Mario - Nintendo Switch', price: 90, sales_count: 5, slug: 'mario', images: ['b.jpg'] },
       ] });
       newsE.imageOk = async () => true;
-      let maxPost = 0;
+      aiE.translate = async (x) => x;
+      let n = 0;
+      newsE.fetchLatestNews = async () => [{ title: 'Novo jogo anunciado', link: `https://x/n${++n}`, source: 'Nintendo', image: 'i.jpg', ts: 1 }];
+      newsE.fetchLatestReviews = async () => [{ title: 'Review: Zelda (Switch) - Obra-prima', link: `https://x/r${++n}`, source: 'IGN', image: 'i.jpg', ts: 1 }];
       const amostras = [];
       for (let i = 0; i < 25; i++) {
-        const posts = [await comunidade.genCoupon(), await comunidade.genBestSellers(), await comunidade.genAvaliacao()];
-        const promo = await comunidade.genPromo();
-        if (promo) posts.push(promo.text);
-        for (const p of posts) { const tx = typeof p === 'string' ? p : p?.text; if (tx) { maxPost = Math.max(maxPost, nEmoji(tx)); amostras.push(tx); } }
+        const ger = [await comunidade.genCoupon(), await comunidade.genBestSellers(), await comunidade.genAvaliacao(),
+          await comunidade.genPromo(), await comunidade.genNews(), await comunidade.genReviews()];
+        for (const p of ger) { const tx = typeof p === 'string' ? p : p?.text; if (tx) amostras.push(tx); }
         comunidade._estado().promoRecent = [];
       }
-      t('post montado (promo, cupom, mais vendidos, avaliação) tem no máximo 2 emojis', amostras.length > 0 && maxPost <= 2, String(maxPost));
-      t('  e nenhuma linha começa com emoji',
-        amostras.every((tx) => tx.split('\n').every((l) => !/^\p{Extended_Pictographic}/u.test(l))));
-      // Notícia e review: o título/cabeçalho traduzido não entra na conta, só o que o código acrescenta.
-      const montadoNews = `${T.newsHead[0]} Nintendo!\n\ntitulo\n\n${T.newsLink[0].replace('{link}', 'https://x')}`;
-      const montadoRev = `${T.reviewHead[0]} Site\n\n*Jogo* — Switch\n\n_veredito_\n${T.reviewLoja[0].replace('{link}', 'https://x')}\n\n${T.reviewLink[0].replace('{link}', 'https://x')}`;
-      t('notícia e review montadas têm no máximo 2 emojis', nEmoji(montadoNews) <= 2 && nEmoji(montadoRev) <= 2);
+      const ruins = amostras.filter((x) => nEmoji(x) < 3 || nEmoji(x) > 6);
+      t('post montado (promo, cupom, mais vendidos, notícia, review, avaliação) tem de 3 a 6 emojis',
+        amostras.length >= 100 && ruins.length === 0, ruins[0] || String(amostras.length));
+      t('  sem emoji separador e sem linha começando com emoji',
+        amostras.every((x) => !separador(x) && x.split('\n').every((l) => !/^\p{Extended_Pictographic}/u.test(l))));
       nerixE.listCoupons = salvoE.lc; nerixE.listProducts = salvoE.lp; newsE.imageOk = salvoE.io;
+      newsE.fetchLatestNews = salvoE.ln; newsE.fetchLatestReviews = salvoE.lr; aiE.translate = salvoE.tr;
     }
 
     // Sorteio: nunca uma das últimas 5.
