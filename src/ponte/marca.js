@@ -27,8 +27,12 @@
 const NOME = 'PHAZE GAMES';
 const EMOJI = '🎮';
 
-const CABECALHO = `${EMOJI} *${NOME}*`;
+// O cabeçalho só existe neste fluxo (abertura) e vai sem emoji: emoji em toda
+// mensagem entrega que é bot. A ASSINATURA com emoji segue no posvenda.js; o
+// fluxo do código usa a ASSINATURA_SIMPLES.
+const CABECALHO = `*${NOME}*`;
 const ASSINATURA = `_Phaze Games_ ${EMOJI}`;
+const ASSINATURA_SIMPLES = '_Phaze Games_';
 
 /** Cabeçalho + texto. Só na mensagem que abre o atendimento. */
 function abertura(texto) {
@@ -40,4 +44,9 @@ function assinar(texto) {
   return `${String(texto || '').trim()}\n\n${ASSINATURA}`;
 }
 
-module.exports = { abertura, assinar, NOME, EMOJI, CABECALHO, ASSINATURA };
+/** Como assinar, sem o emoji. Para o fluxo do código. */
+function assinarSimples(texto) {
+  return `${String(texto || '').trim()}\n\n${ASSINATURA_SIMPLES}`;
+}
+
+module.exports = { abertura, assinar, assinarSimples, NOME, EMOJI, CABECALHO, ASSINATURA, ASSINATURA_SIMPLES };

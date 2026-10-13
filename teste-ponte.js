@@ -4014,10 +4014,10 @@ const OP = '5541999999999';
     const pedido = para(cli(1), /desculpa/i);
     t('C: o cliente recebe o pedido de desculpa com o #inicio', pedido.length === 1 && /#inicio/.test(pedido[0].texto), JSON.stringify(para(cli(1))));
     t('C: texto é uma das variantes combinadas', [
-      'Poxa, me desculpa 😔 Não consegui pegar o seu código dessa vez.\n\n' +
+      'Poxa, me desculpa. Não consegui pegar o seu código dessa vez.\n\n' +
         'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚',
-      'Desculpa, não consegui pegar seu código dessa vez 😔 Não perdeu nada: manda *#inicio* aqui que eu te coloco na fila de novo 💚',
-      'Poxa, não deu pra pegar seu código agora 😔 Me desculpa! Manda *#inicio* e eu te coloco de volta na fila 💚',
+      'Desculpa, não consegui pegar seu código dessa vez.\n\nNão perdeu nada: manda *#inicio* aqui que eu te coloco na fila de novo.',
+      'Poxa, não deu pra pegar seu código agora. Me desculpa!\n\nManda *#inicio* e eu te coloco de volta na fila 💚',
     ].includes(pedido[0]?.texto));
     t('C: uma mensagem só ao cliente', para(cli(1)).length === 1);
     await ponteMod.tick();
@@ -4091,6 +4091,53 @@ const OP = '5541999999999';
         if (!ok) t('variante de login mantém o conteúdo aprovado', false, m);
       }
       if (!/sem a senha/.test(pede)) t('pedido de login diz sem a senha', false, pede);
+    }
+    // Texto de bot: no máximo 1 emoji por mensagem (a 🔑 do login não conta,
+    // ela cita o símbolo da entrega) e nunca emoji separando frases na mesma linha.
+    {
+      const fsT = require('fs');
+      const EMOJI = /\p{Extended_Pictographic}\uFE0F?/gu;
+      const SEPARADOR = /[^\s\p{Extended_Pictographic}]\s*\p{Extended_Pictographic}\uFE0F?\s+[^\s\p{Extended_Pictographic}]/u;
+      const grupos = {
+        espera: ['recepcao', 'VARIANTES_ESPERA'],
+        pede_foto: ['recepcao', 'VARIANTES_PEDE_FOTO'],
+        sua_vez: ['recepcao', 'VARIANTES_SUA_VEZ'],
+        pede_usuario: ['recepcao', 'VARIANTES_PEDE_USUARIO'],
+        usuario_invalido: ['recepcao', 'VARIANTES_USUARIO_INVALIDO'],
+        proximo: ['avanco', 'VARIANTES_PROXIMO'],
+        perto: ['avanco', 'VARIANTES_PERTO'],
+        video: ['tutorial', 'VARIANTES_VIDEO'],
+        avaliacao: ['tutorial', 'VARIANTES_AVALIACAO'],
+      };
+      const todas = [];
+      for (const [nome, [mod, chave]] of Object.entries(grupos)) {
+        const lista = require('./src/ponte/' + mod)[chave];
+        if (!lista) { t('variantes exportadas: ' + nome, false); continue; }
+        for (const v of lista) todas.push([nome, typeof v === 'function' ? v(3) : v]);
+      }
+      // As de index.js não são exportadas: lê o fonte e avalia os literais.
+      const fonteIndex = fsT.readFileSync(require.resolve('./src/ponte/index.js'), 'utf8').split('\r\n').join('\n');
+      for (const nome of ['VARIANTES_ANOTEI', 'VARIANTES_RECEBI_TUDO', 'VARIANTES_PEGANDO_EXTRA', 'VARIANTES_INSTABILIDADE', 'VARIANTES_ANDAMENTO', 'VARIANTES_CODIGO', 'VARIANTES_VEZ_RETORNO', 'VARIANTES_VEZ_PEGANDO', 'VARIANTES_EXPIROU_PADRAO', 'VARIANTES_DESCULPA_EXPIROU']) {
+        const marcaIni = 'const ' + nome + ' = ';
+        const ini = fonteIndex.indexOf(marcaIni);
+        const fim = fonteIndex.indexOf('\n];', ini);
+        if (ini < 0 || fim < 0) { t('fonte achado: ' + nome, false); continue; }
+        const lista = (0, eval)(fonteIndex.slice(ini + marcaIni.length, fim + 3));
+        for (const v of lista) todas.push([nome, typeof v === 'function' ? v(3) : v]);
+      }
+      const iniR = fonteIndex.indexOf("escolher('retorno_conta', [");
+      const blocoR = fonteIndex.slice(iniR, fonteIndex.indexOf('], atendimento.from', iniR));
+      for (const m of blocoR.match(/'[^'\n]+'/g) || []) todas.push(['retorno_conta', (0, eval)(m)]);
+      const ruins = [];
+      for (const [nome, txt] of todas) {
+        const sem = txt.split('🔑').join('');
+        const n = (sem.match(EMOJI) || []).length;
+        if (n > 1) ruins.push(nome + ': ' + n + ' emojis');
+        if (sem.split('\n').some((l) => SEPARADOR.test(l))) ruins.push(nome + ': emoji separando frases');
+        if (/[0-9]\uFE0F?\u20E3/u.test(txt)) ruins.push(nome + ': keycap');
+      }
+      t('todas as variantes: no máximo 1 emoji e nenhum emoji separando frases', ruins.length === 0, ruins.join(' | '));
+      t('conferiu todas as variantes do fluxo', todas.length >= 60, String(todas.length));
     }
     t('várias formas de pedir/recusar login saem', vistos.size >= 4, String(vistos.size));
   }

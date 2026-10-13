@@ -101,7 +101,7 @@ function estado(agora = new Date()) {
       // máquina no número comercial, exatamente o que não pode. Passou porque
       // o teste procurava "automatico\b" e a palavra é "automaticamente" —
       // o regex foi corrigido junto.
-      avisoCliente: 'Já estou pegando seu código. Só um instante 👍',
+      avisoCliente: 'Já estou pegando seu código. Só um instante.',
     };
   }
 
@@ -123,7 +123,7 @@ function estado(agora = new Date()) {
     // mensagem.
     avisoCliente:
       `Recebi! Voltamos às *${comoHora(alvo)}*, daqui a *${comoEspera(espera)}*. ` +
-      `Você já está na fila e eu te mando assim que sair 👍`,
+      `Você já está na fila e eu te mando assim que sair.`,
   };
 }
 

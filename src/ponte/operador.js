@@ -1336,7 +1336,7 @@ async function executar(texto, de = '', ctx = {}) {
       await sender.send(
         at.from,
         j.aberta
-          ? 'Já estou pegando seu código. Só um instante 👍'
+          ? 'Já estou pegando seu código. Só um instante.'
           : j.avisoCliente,
       );
     }

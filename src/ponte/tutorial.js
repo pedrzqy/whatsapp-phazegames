@@ -22,37 +22,37 @@ const exemplo = require('../exemplo');
 // 3 formas de cada texto (variantes.js). A legenda do vídeo fica profissional;
 // o pedido de avaliação segue carinhoso. A #1 de cada é o texto original.
 const VARIANTES_VIDEO = [
-  '🎮 *Tutorial de instalação*\n\n' +
-    'Seu código foi entregue com sucesso ✅\n\n' +
+  '*Tutorial de instalação*\n\n' +
+    'Seu código foi entregue com sucesso.\n\n' +
     'Assista ao vídeo e siga o passo a passo para concluir a instalação do jogo no seu Nintendo Switch.\n\n' +
     'Em caso de dúvida, é só responder por aqui.',
-  '🎮 *Tutorial de instalação*\n\n' +
-    'Código entregue com sucesso ✅\n\n' +
-    'Assista ao vídeo e siga o passo a passo para instalar o jogo no seu Nintendo Switch. ' +
+  '*Tutorial de instalação*\n\n' +
+    'Código entregue com sucesso.\n\n' +
+    'Assista ao vídeo e siga o passo a passo para instalar o jogo no seu Nintendo Switch.\n\n' +
     'Qualquer dúvida, é só responder por aqui.',
-  '🎮 *Tutorial de instalação*\n\n' +
-    'Seu código foi entregue ✅\n\n' +
-    'Siga o passo a passo do vídeo para concluir a instalação no seu Nintendo Switch. ' +
+  '*Tutorial de instalação*\n\n' +
+    'Seu código foi entregue.\n\n' +
+    'Siga o passo a passo do vídeo para concluir a instalação no seu Nintendo Switch.\n\n' +
     'Se precisar de ajuda, estamos à disposição.',
 ];
 const MSG_VIDEO = VARIANTES_VIDEO[0];
 
 const VARIANTES_AVALIACAO = [
-  'Ahh, e uma coisinha 🥺💚\n\n' +
+  'Ahh, e uma coisinha 💚\n\n' +
     'Se deu tudo certo e você curtiu, deixa uma *avaliação* lá no nosso *grupo oficial*? ' +
-    'Pode ser um print do jogo rodando, uma foto ou só umas palavrinhas 🎮✨\n\n' +
-    'Ainda não tá no grupo? Me pede aqui que eu te adiciono rapidinho! Lá sempre rola *cupom de desconto* 🎁\n\n' +
-    'Bom jogo! 🕹️',
-  'Uma coisinha antes de ir 🥺💚\n\n' +
+    'Pode ser um print do jogo rodando, uma foto ou só umas palavrinhas.\n\n' +
+    'Ainda não tá no grupo? Me pede aqui que eu te adiciono rapidinho! Lá sempre rola *cupom de desconto*.\n\n' +
+    'Bom jogo!',
+  'Uma coisinha antes de ir.\n\n' +
     'Deu tudo certo? Deixa uma *avaliação* no nosso *grupo oficial*! ' +
-    'Pode ser um print do jogo rodando ou só umas palavrinhas 🎮\n\n' +
-    'Ainda não tá no grupo? Me pede aqui que eu te adiciono rapidinho, lá sempre rola *cupom de desconto* 🎁\n\n' +
-    'Bom jogo! 🕹️',
-  'Ahh, antes que eu esqueça 💚\n\n' +
+    'Pode ser um print do jogo rodando ou só umas palavrinhas.\n\n' +
+    'Ainda não tá no grupo? Me pede aqui que eu te adiciono rapidinho, lá sempre rola *cupom de desconto*.\n\n' +
+    'Bom jogo! 💚',
+  'Ahh, antes que eu esqueça.\n\n' +
     'Se você curtiu, deixa uma *avaliação* no *grupo oficial*? ' +
-    'Um print ou umas palavrinhas já ajudam muito 🥹✨\n\n' +
-    'Ainda sem grupo? Me fala que eu te adiciono rapidinho, tem *cupom de desconto* lá 🎁\n\n' +
-    'Bom jogo! 🎮',
+    'Um print ou umas palavrinhas já ajudam muito.\n\n' +
+    'Ainda sem grupo? Me fala que eu te adiciono rapidinho, tem *cupom de desconto* lá.\n\n' +
+    'Bom jogo! 💚',
 ];
 
 function mensagemAvaliacao(destino) {
