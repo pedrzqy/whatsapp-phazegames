@@ -32,6 +32,7 @@ const path = require('path');
 const nerix = require('./nerix');
 const sender = require('./sender');
 const telefones = require('./telefone');
+const painel = require('./painel-estoque');
 const { formatOrder } = require('./tools');
 
 // A lista de operadores mora na config da ponte porque foi lá que ela nasceu.
@@ -401,7 +402,12 @@ async function notificarVenda(pedido) {
   }
 
   linhas.push('');
-  if (semChave.length && comChave.length) {
+  if (semChave.length && painel.ligado()) {
+    // Com o painel de estoque ligado, "sem chave" deixou de significar
+    // "entrega na mão": a conta sai do painel logo depois deste aviso. Se
+    // faltar conta, chega um alerta próprio dizendo de qual jogo.
+    linhas.push('📦 Conta sai do painel de estoque e vai no WhatsApp do cliente.');
+  } else if (semChave.length && comChave.length) {
     linhas.push(`⚠️ *${semChave.length} item(ns) sem chave* — precisa preparar a entrega.`);
   } else if (semChave.length) {
     linhas.push('⚠️ *Sem chave em estoque* — a entrega é na mão.');
@@ -522,6 +528,109 @@ async function entregarChaves(pedido) {
         comChave.map((i) => `${i.nome}\n\`${i.chave}\``).join('\n\n'),
     );
     console.error(`[vendas] entrega de ${pedido.codigo} falhou:`, err.message);
+  }
+}
+
+// ── Conta do painel de estoque ───────────────────────────────
+
+/**
+ * Entrega a CONTA (login e senha) que mora no painel de estoque.
+ *
+ * É o caso que o entregarChaves deixa passar de propósito: item pago sem
+ * `product_key`. Antes isso era "entrega na mão"; agora o painel reserva uma
+ * conta livre por jogo e devolve a mensagem pronta no padrão da loja.
+ *
+ * A ORDEM importa, e é diferente da entrega de chave por um motivo:
+ *   1. Pede ao painel ANTES de marcar. A reserva lá é idempotente (o mesmo
+ *      pedido devolve as mesmas contas), então perguntar duas vezes é seguro;
+ *      marcar antes e o painel estar fora do ar deixaria a venda sem entrega
+ *      e sem ninguém tentar de novo.
+ *   2. Marca `entregueEstoque` ANTES de mandar, como o resto do arquivo: o
+ *      pior caso é uma mensagem que não saiu (vira alerta com o acesso
+ *      junto), nunca a mesma conta mandada duas vezes.
+ *
+ * Passo próprio (`entregueEstoque`) e não o `entregue` da chave: um pedido
+ * pode ter as duas coisas, e uma não pode travar a outra.
+ */
+async function entregarDoPainel(pedido) {
+  if (!painel.ligado() || !pedido.pago) return;
+  const { semChave } = separarPorChave(pedido.itens);
+  if (!semChave.length) return;
+  if (jaFeito(pedido.codigo, 'entregueEstoque')) return;
+
+  let resp;
+  try {
+    resp = await painel.entregar(pedido.codigo);
+  } catch (err) {
+    const status = err.response?.status;
+    console.error(`[painel] entrega de ${pedido.codigo} falhou: ${status || err.message}`);
+    // 409 é "ainda não pago" do ponto de vista do painel (a Nerix pode
+    // demorar um instante para virar o status). O próximo evento tenta de
+    // novo; avisar o operador agora seria alarme falso.
+    if (status === 409) return;
+    if (marcar(pedido.codigo, 'alertaPainel')) {
+      await avisarOperador(
+        `⚠️ *Painel de estoque não respondeu*, pedido ${pedido.codigo}\n\n` +
+          `${pedido.nome || 'Cliente'}${pedido.telefone ? ` · ${pedido.telefone}` : ''}\n` +
+          semChave.map((i) => `• ${i.nome}`).join('\n') +
+          '\n\nEntregue pelo painel: o pedido aparece em Entregas feitas, em "Pagos e sem entrega".',
+      );
+    }
+    return;
+  }
+
+  if (resp.nada) return; // nenhum jogo deste pedido tem conta no painel: segue na mão
+
+  if (resp.falta.length && marcar(pedido.codigo, 'faltaPainel')) {
+    await avisarOperador(
+      `📦 *Faltou conta no painel*, pedido ${pedido.codigo}\n\n` +
+        `${pedido.nome || 'Cliente'}${pedido.telefone ? ` · ${pedido.telefone}` : ''}\n` +
+        resp.falta.map((f) => `• ${f.nome}${f.motivo === 'sem escolha' ? ' (não escolheu os jogos)' : ''}`).join('\n') +
+        (resp.itens.length ? '\n\nO resto do pedido já foi para o cliente.' : '') +
+        '\n\nReponha a conta e toque em "Completar com o estoque" no painel.',
+    );
+  }
+
+  if (!resp.itens.length || !resp.mensagem) return;
+  // Um atendente já separou e mandou pelo painel (botão de pedido pendente).
+  if (resp.enviada) return;
+
+  const numero = paraWhatsApp(pedido.telefone, pedido.pais);
+  const pausado = numero ? Boolean(require('./store').getContact(numero)?.paused) : false;
+
+  if (!numero || pausado) {
+    // O ACESSO VAI JUNTO, pelo mesmo motivo do entregarChaves: o operador
+    // está no celular e precisa resolver sem abrir outra tela.
+    if (!marcar(pedido.codigo, 'entregueEstoque')) return;
+    const motivo = !numero
+      ? `o telefone do pedido (${pedido.telefone || 'vazio'}) não dá para usar no WhatsApp`
+      : 'tem atendente conversando com esse cliente agora';
+    await avisarOperador(
+      `📦 *Entrega manual*, pedido ${pedido.codigo}\n\n` +
+        `${pedido.nome || 'Cliente'}: ${motivo}.\n` +
+        `${pedido.email ? `E-mail: ${pedido.email}\n` : ''}\n` +
+        'Mensagem pronta para encaminhar:',
+    );
+    await avisarOperador(resp.mensagem);
+    await painel.enviado(pedido.codigo, false, !numero ? 'telefone invalido' : 'atendimento humano');
+    return;
+  }
+
+  if (!marcar(pedido.codigo, 'entregueEstoque')) return;
+
+  try {
+    await sender.send(numero, resp.mensagem);
+    // Separado da mensagem padrão para ela sair exatamente no formato da
+    // loja. É a mensagem que EXPIRA (mensagens temporárias), então o
+    // caminho de volta precisa ser dito agora.
+    await sender.send(numero, '_Guarda essa mensagem. Se sumir, é só digitar *#meulogin* aqui._');
+    console.log(`[painel] ${resp.itens.length} conta(s) do pedido ${pedido.codigo} entregues`);
+    await painel.enviado(pedido.codigo, true);
+  } catch (err) {
+    console.error(`[painel] envio de ${pedido.codigo} falhou:`, err.message);
+    await avisarOperador(`⚠️ *Entrega falhou*, pedido ${pedido.codigo}\n\nNão consegui mandar para ${numero}. Precisa entregar na mão:`);
+    await avisarOperador(resp.mensagem);
+    await painel.enviado(pedido.codigo, false, err.message);
   }
 }
 
@@ -744,6 +853,7 @@ async function onEvento(evento) {
     case 'order.approved':
       await notificarVenda(pedido);
       await avisarPagamentoAoCliente(pedido);
+      await entregarDoPainel(pedido);
       break;
 
     case 'order.delivered':
@@ -753,6 +863,7 @@ async function onEvento(evento) {
       // quase juntos. As travas deixam chamar os dois sem risco de repetir.
       await notificarVenda(pedido);
       await entregarChaves(pedido);
+      await entregarDoPainel(pedido);
       break;
 
     case 'order.cancelled':
@@ -784,6 +895,7 @@ async function onEvento(evento) {
         // A chave só sai se já existir no pedido; se ainda não saiu, esta
         // chamada não faz nada e o evento de entrega resolve depois.
         await entregarChaves(pedido);
+        await entregarDoPainel(pedido);
       } else {
         await mandarPixNaHora(pedido);
       }
@@ -877,6 +989,7 @@ module.exports = {
   acharPedido,
   carregar,
   avisarOperador,
+  entregarDoPainel,
   jaFeito,
   marcar,
   primeiroNome,

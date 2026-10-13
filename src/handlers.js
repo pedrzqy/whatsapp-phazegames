@@ -19,6 +19,7 @@ const sender = require('./sender');
 const variator = require('./variator');
 const operador = require('./ponte/operador');
 const vendas = require('./vendas');
+const painelEstoque = require('./painel-estoque');
 const exemplo = require('./exemplo');
 const recepcao = require('./ponte/recepcao');
 const humaniza = require('./ponte/humaniza');
@@ -1078,15 +1079,31 @@ async function mandarAcesso(from, pushName) {
     console.warn('[acesso] busca por telefone falhou:', err.message);
   }
 
+  // As contas que saíram do PAINEL DE ESTOQUE não estão no pedido da Nerix
+  // (ela entrega um texto vazio). Pergunta ao painel pelos mesmos pedidos que
+  // a busca por telefone achou: a prova de identidade continua sendo o número.
+  const doPainel = new Map();
+  try {
+    const codigos = pedidos.slice(0, 10).map((p) => tools.formatOrder(p).codigo).filter(Boolean);
+    for (const a of await painelEstoque.acessos(codigos)) doPainel.set(String(a.pedido), a.itens || []);
+  } catch (err) {
+    console.warn('[acesso] painel de estoque não respondeu:', err.response?.status || err.message);
+  }
+
   const blocos = [];
   let quantos = 0;
   for (const p of pedidos.slice(0, 5)) {
     const r = tools.formatOrder(p);
     const comChave = (r.itens || []).filter((i) => i.chave);
-    if (!comChave.length) continue;
-    quantos += comChave.length;
+    const contas = doPainel.get(String(r.codigo)) || [];
+    if (!comChave.length && !contas.length) continue;
+    quantos += comChave.length + contas.length;
     blocos.push(
-      [`📦 *Pedido ${r.codigo}*`, ...comChave.map((i) => `*${i.nome}*\n\`${i.chave}\``)].join('\n'),
+      [
+        `📦 *Pedido ${r.codigo}*`,
+        ...comChave.map((i) => `*${i.nome}*\n\`${i.chave}\``),
+        ...contas.map((c) => `*${c.nome}*\n🔑 Login: ${c.login}\n🔒 Senha: ${c.senha}`),
+      ].join('\n'),
     );
   }
 

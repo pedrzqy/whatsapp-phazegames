@@ -1244,6 +1244,120 @@ const CLI = '5541999998888';
       confs.size >= 3 && reats.size >= 3 && !seqIgual, `${confs.size}/${reats.size}`);
   }
 
+  // ── Conta do painel de estoque ─────────────────────────────
+  //
+  // As contas saíram da Nerix: o pedido pago chega sem product_key e quem
+  // reserva a conta é o painel. Aqui o painel é um dublê, e o que se protege é
+  // o mesmo de sempre: conta mandada uma vez só, nunca para o número errado, e
+  // nenhum aviso de falha em silêncio.
+  {
+    bloco('conta do painel de estoque');
+    const painelEst = require('./src/painel-estoque');
+    const salvo = { ...painelEst };
+    const PROIBIDO = require('./src/ponte/politica').vocabularioProibido();
+    const MSG = '🕹️ *A Phaze Games agradece pela sua compra!*\n\n🎮 *Zelda*\n\n🔑 Login: conta1\n🔒 Senha: s1';
+    let chamadas = [];
+    let marcadas = [];
+    let resposta = null;
+    let erro = null;
+    painelEst.ligado = () => true;
+    painelEst.entregar = async (codigo) => {
+      chamadas.push(codigo);
+      if (erro) throw erro;
+      return resposta;
+    };
+    painelEst.enviado = async (codigo, ok, motivo) => { marcadas.push({ codigo, ok, motivo }); };
+    const semChave = (cod, over = {}) => pedido({ order_number: cod, payment_status: 'paid', items: [{ product_name: 'Zelda - Mídia Digital', quantity: 1, product_key: '' }], ...over });
+    const prontoComConta = { nada: false, ja: false, enviada: false, itens: [{ nome: 'Zelda', login: 'conta1', senha: 's1' }], falta: [], mensagem: MSG };
+
+    enviadas = []; chamadas = []; marcadas = [];
+    resposta = prontoComConta;
+    pedidoFalso = semChave('pp-1');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-1' } });
+    const aoCliente = enviadas.filter((e) => e.para === CLI);
+    t('pago sem chave: a mensagem do painel vai para o cliente', aoCliente.some((e) => e.texto === MSG), aoCliente.map((e) => e.texto.slice(0, 30)).join(' | '));
+    t('e ensina o #meulogin numa mensagem separada', aoCliente.some((e) => /#meulogin/.test(e.texto)));
+    t('o painel fica sabendo que saiu', marcadas.some((m) => m.codigo === 'pp-1' && m.ok));
+    const aviso = enviadas.find((e) => /Venda paga/.test(e.texto));
+    t('o aviso de venda não diz mais "entrega na mão"', aviso && !/na mão/.test(aviso.texto) && /painel de estoque/.test(aviso.texto), aviso?.texto.split('\n').slice(-3).join(' / '));
+
+    enviadas = [];
+    await vendas.onEvento({ event: 'order.delivered', data: { order_number: 'pp-1' } });
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-1' } });
+    t('webhook repetido não manda a conta de novo', !enviadas.some((e) => e.texto === MSG), String(enviadas.length));
+
+    enviadas = []; marcadas = [];
+    pedidoFalso = semChave('pp-2', { customer_phone: '123' });
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-2' } });
+    t('telefone inválido: nada vai para número nenhum de cliente', !enviadas.some((e) => e.para !== OP && e.texto === MSG));
+    t('e o operador recebe a mensagem pronta para encaminhar', enviadas.some((e) => e.para === OP && e.texto === MSG));
+    t('e o painel marca que não saiu', marcadas.some((m) => m.codigo === 'pp-2' && !m.ok));
+
+    enviadas = [];
+    require('./src/store').saveContact(CLI, { paused: true });
+    pedidoFalso = semChave('pp-3');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-3' } });
+    t('cliente em atendimento humano: a conta vai para o operador, não por cima da conversa', !enviadas.some((e) => e.para === CLI && e.texto === MSG) && enviadas.some((e) => e.para === OP && e.texto === MSG));
+    require('./src/store').saveContact(CLI, { paused: false });
+
+    enviadas = [];
+    resposta = { ...prontoComConta, falta: [{ nome: 'Mario Kart', motivo: 'sem conta' }] };
+    pedidoFalso = semChave('pp-4');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-4' } });
+    await vendas.onEvento({ event: 'order.delivered', data: { order_number: 'pp-4' } });
+    const faltas = enviadas.filter((e) => e.para === OP && /Faltou conta/.test(e.texto));
+    t('faltou conta de um jogo: operador avisado uma vez, com o nome do jogo', faltas.length === 1 && /Mario Kart/.test(faltas[0].texto), String(faltas.length));
+    t('e o que tinha conta já foi para o cliente', enviadas.some((e) => e.para === CLI && e.texto === MSG));
+
+    enviadas = []; chamadas = [];
+    erro = Object.assign(new Error('fora do ar'), { response: { status: 502 } });
+    pedidoFalso = semChave('pp-5');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-5' } });
+    await vendas.onEvento({ event: 'order.delivered', data: { order_number: 'pp-5' } });
+    const foraDoAr = enviadas.filter((e) => e.para === OP && /não respondeu/.test(e.texto));
+    t('painel fora do ar: operador avisado uma vez só', foraDoAr.length === 1, String(foraDoAr.length));
+    erro = null;
+    resposta = prontoComConta;
+    enviadas = [];
+    await vendas.onEvento({ event: 'order.delivered', data: { order_number: 'pp-5' } });
+    t('e quando o painel volta, o próximo aviso da loja entrega', enviadas.some((e) => e.para === CLI && e.texto === MSG));
+
+    enviadas = [];
+    resposta = { ...prontoComConta, enviada: true };
+    pedidoFalso = semChave('pp-6');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-6' } });
+    t('atendente já mandou pelo painel: o cliente não recebe de novo', !enviadas.some((e) => e.texto === MSG));
+
+    enviadas = [];
+    resposta = { nada: true, itens: [], falta: [], mensagem: '' };
+    pedidoFalso = semChave('pp-7');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-7' } });
+    t('jogo sem conta no painel: segue o caminho antigo, sem mensagem de conta', !enviadas.some((e) => e.texto === MSG));
+
+    enviadas = []; chamadas = [];
+    resposta = prontoComConta;
+    pedidoFalso = pedido({ order_number: 'pp-8', payment_status: 'paid' });
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-8' } });
+    t('pedido que já veio com chave da Nerix nem pergunta ao painel', chamadas.length === 0, String(chamadas.length));
+
+    enviadas = []; chamadas = [];
+    pedidoFalso = semChave('pp-9', { payment_status: 'pending', status: 'pending' });
+    await vendas.onEvento({ event: 'order.created', data: { order_number: 'pp-9' } });
+    t('pedido não pago nunca pede conta ao painel', chamadas.length === 0);
+
+    painelEst.ligado = () => false;
+    enviadas = []; chamadas = [];
+    pedidoFalso = semChave('pp-10');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-10' } });
+    const avisoVelho = enviadas.find((e) => /Venda paga/.test(e.texto));
+    t('painel desligado: comportamento antigo (entrega na mão)', chamadas.length === 0 && /na mão/.test(avisoVelho?.texto || ''));
+
+    const textosOperador = enviadas.concat(faltas, foraDoAr).filter((e) => e.para === OP).map((e) => e.texto).join('\n');
+    t('nenhum aviso do painel usa palavra barrada', !PROIBIDO.test(textosOperador), (textosOperador.match(PROIBIDO) || ['limpo'])[0]);
+
+    Object.assign(painelEst, salvo);
+  }
+
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));
   process.exit(falhas ? 1 : 0);
 })();
