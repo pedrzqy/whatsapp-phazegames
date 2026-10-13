@@ -48,10 +48,28 @@ async function entregar(codigo) {
   };
 }
 
-/** Conta ao painel se a mensagem saiu, para aparecer na tela dos atendentes. */
-async function enviado(codigo, ok, erro) {
+/**
+ * O que falta mandar de um pedido que já tem entrega no painel. Usado quando
+ * o atendente digita no painel a conta de um jogo que estava sem estoque.
+ */
+async function aEnviar(codigo) {
+  const { data } = await http.post(`/bot/pedidos/${encodeURIComponent(codigo)}/a-enviar`);
+  return {
+    nada: Boolean(data?.nada),
+    itens: Array.isArray(data?.itens) ? data.itens : [],
+    falta: Array.isArray(data?.falta) ? data.falta : [],
+    mensagem: String(data?.mensagem || ''),
+  };
+}
+
+/**
+ * Conta ao painel se a mensagem saiu, para aparecer na tela dos atendentes.
+ * `ids` são os itens que foram nesta mensagem: o painel marca só eles, e o
+ * próximo pedido de envio do mesmo pedido não repete nenhum.
+ */
+async function enviado(codigo, ok, erro, ids) {
   try {
-    await http.post(`/bot/pedidos/${encodeURIComponent(codigo)}/enviado`, { ok: Boolean(ok), erro: erro ? String(erro).slice(0, 200) : undefined });
+    await http.post(`/bot/pedidos/${encodeURIComponent(codigo)}/enviado`, { ok: Boolean(ok), erro: erro ? String(erro).slice(0, 200) : undefined, ids: ids || [] });
   } catch (err) {
     // Só a etiqueta da tela fica errada; a entrega em si já aconteceu ou já
     // virou alerta. Não vale derrubar nada por isso.
@@ -66,4 +84,7 @@ async function acessos(codigos) {
   return Array.isArray(data?.acessos) ? data.acessos : [];
 }
 
-module.exports = { ligado, entregar, enviado, acessos };
+/** A chave que o painel manda quando pede um envio (mesma PAINEL_BOT_CHAVE). */
+const chave = () => CHAVE;
+
+module.exports = { ligado, entregar, aEnviar, enviado, acessos, chave };

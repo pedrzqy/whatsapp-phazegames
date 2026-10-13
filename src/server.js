@@ -338,6 +338,27 @@ app.post('/webhooks/nerix', async (req, res) => {
 });
 
 /**
+ * O painel de estoque pede para mandar ao cliente uma conta que o atendente
+ * acabou de digitar (venda que caiu sem estoque). Só o código do pedido
+ * vem do painel: telefone e pagamento são relidos na Nerix.
+ */
+app.post('/painel/enviar', (req, res) => {
+  const painelEstoque = require('./painel-estoque');
+  const recebida = Buffer.from(String(req.get('x-painel-chave') || ''));
+  const esperada = Buffer.from(painelEstoque.chave());
+  const certa = esperada.length > 0 && recebida.length === esperada.length && require('crypto').timingSafeEqual(recebida, esperada);
+  if (!certa) {
+    console.warn('[painel] pedido de envio RECUSADO: chave errada ou PAINEL_BOT_CHAVE vazia');
+    return res.status(401).json({ ok: false });
+  }
+  const codigo = String(req.body?.codigo || '').trim().slice(0, 80);
+  if (!codigo) return res.status(400).json({ ok: false });
+  // Responde antes de mandar: a fila humanizada leva dezenas de segundos.
+  res.status(202).json({ ok: true });
+  vendas.complementarDoPainel(codigo).catch((err) => console.error(`[painel] envio de ${codigo}:`, err.message));
+});
+
+/**
  * Data do código que está rodando de verdade.
  *
  * Os dois serviços sobem SEPARADOS no Easypanel, e deployar só um já causou
