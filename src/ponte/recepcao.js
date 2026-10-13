@@ -201,7 +201,7 @@ const VARIANTES_ESPERA = [
     'Quando for sua vez eu te chamo aqui, sem precisar mandar nada agora 👍',
   (n) =>
     `Fila do código ⏳ Na sua frente: ${variantes.pessoas(n)}.\n\n` +
-    'Chegando sua vez eu te aviso por aqui. Pode ficar tranquilo 👍',
+    'Chegando sua vez eu te aviso por aqui, sem precisar mandar nada. Pode ficar tranquilo 👍',
 ].map((f) => (n) => marca.abertura(f(n)));
 
 const msgEspera = (aFrente, from) => variantes.escolher('espera', VARIANTES_ESPERA, from, aFrente);
