@@ -58,39 +58,39 @@ function saveState() {
 // (índice gravado em state.textoUlt, que sobrevive a reinício). Texto idêntico
 // todo dia, no mesmo minuto, é o que o WhatsApp lê como robô.
 const TEXTOS = {
-  bestHead: ['🏆 Os *mais vendidos* da Phaze Games agora:', '🔥 O que tá bombando na Phaze Games:', '🏆 Ranking dos queridinhos da galera:', '⭐ Os jogos mais pedidos da Phaze Games:'],
-  bestFoot: ['Garanta o seu em {url} 🎮', 'Tá tudo em {url} 🎮', 'Dá uma olhada em {url} 👀', 'Confere lá: {url} 🎮'],
-  promoIntro: ['🎮 Destaque do dia na *Phaze Games*', '🔥 Bora jogar?', '🎮 Que tal esse hoje?', '🕹️ Olha esse aqui na *Phaze Games*', '⭐ Sugestão da *Phaze Games*'],
-  promoDePor: ['💰 de ~{de}~ por *{por}*', '💸 Antes ~{de}~, agora *{por}*', '💰 Saindo de ~{de}~ por *{por}*'],
-  promoPreco: ['💰 *{por}*', '💵 Por *{por}*', '💰 Só *{por}*'],
+  bestHead: ['Os *mais vendidos* da Phaze Games agora:', 'O que tá bombando na Phaze Games:', 'Ranking dos queridinhos da galera:', 'Os jogos mais pedidos da Phaze Games:'],
+  bestFoot: ['Garanta o seu em {url}', 'Tá tudo em {url}', 'Dá uma olhada em {url}', 'Confere lá: {url} 🎮'],
+  promoIntro: ['Destaque do dia na *Phaze Games*', 'Bora jogar?', 'Que tal esse hoje?', 'Olha esse aqui na *Phaze Games*', 'Sugestão da *Phaze Games*'],
+  promoDePor: ['De ~{de}~ por *{por}*', 'Antes ~{de}~, agora *{por}*', 'Saindo de ~{de}~ por *{por}*'],
+  promoPreco: ['Por *{por}*', 'Só *{por}*', 'Preço: *{por}*'],
   promoGarantia: [
-    '✅ 100% original · garantia vitalícia · entrega em até 30 min',
-    '✅ Jogo original, garantia vitalícia e entrega em até 30 minutos',
-    '✅ Original · com garantia vitalícia · chega em até 30 min',
-    '✅ Entrega em até 30 min · 100% original · garantia vitalícia',
+    'Jogo 100% original, com garantia vitalícia e entrega em até 30 minutos.',
+    'Original, com garantia vitalícia. Chega em até 30 minutos.',
+    'Entrega em até 30 minutos, jogo original e garantia vitalícia.',
+    'Você recebe em até 30 minutos, e o jogo é original com garantia vitalícia.',
   ],
-  promoCta: ['👉 Garanta o seu: {url}', '🛒 Pega o seu aqui: {url}', '👉 Tá disponível aqui: {url}', '🎮 Confere e garante o seu: {url}'],
-  cupomHead: ['🎟️ Cupom ativo agora:', '🎁 Solta o cupom!', '🎟️ Bora economizar:', '🎟️ Tem cupom rolando:'],
+  promoCta: ['Garanta o seu: {url}', 'Pega o seu aqui: {url}', 'Tá disponível aqui: {url}', 'Confere e garante o seu: {url}'],
+  cupomHead: ['Cupom ativo agora:', 'Solta o cupom!', 'Bora economizar:', 'Tem cupom rolando:'],
   cupomCorpo: ['{off} na sua compra em {url}', 'Ganhe {off} na sua compra em {url}', '{off} pra usar em {url}'],
-  cupomFim: ['É só aplicar o código *{code}* no checkout 😉', 'Aplica o código *{code}* no checkout e pronto 😉', 'Digita *{code}* no checkout pra usar 😉'],
-  newsHead: ['📰 Saiu novidade no mundo', '📰 Fresquinho do mundo', '🎮 Rolou no mundo', '🗞️ Notícia nova do mundo'],
-  newsLink: ['👉 {link}', '🔗 Leia mais: {link}', '👉 Veja na íntegra: {link}'],
-  reviewHead: ['⭐ *Avaliação* —', '📝 *Review* nova —', '⭐ Saiu análise —', '🎮 *Análise* fresquinha —'],
-  reviewLoja: ['🛒 Tá na *Phaze Games*: {link}', '🛒 Você acha na *Phaze Games*: {link}', '🎮 Disponível na *Phaze Games*: {link}'],
-  reviewLink: ['👉 Review completa: {link}', '📖 Leia a review completa: {link}', '👉 Análise completa aqui: {link}'],
+  cupomFim: ['É só aplicar o código *{code}* no checkout.', 'Aplica o código *{code}* no checkout e pronto.', 'Digita *{code}* no checkout pra usar.'],
+  newsHead: ['Saiu novidade no mundo', 'Fresquinho do mundo', 'Rolou no mundo', 'Notícia nova do mundo'],
+  newsLink: ['Leia mais: {link}', 'Veja na íntegra: {link}', 'Matéria completa: {link}'],
+  reviewHead: ['*Avaliação* —', '*Review* nova —', 'Saiu análise —', '*Análise* fresquinha —'],
+  reviewLoja: ['Tá na *Phaze Games*: {link}', 'Você acha na *Phaze Games*: {link}', 'Disponível na *Phaze Games*: {link}'],
+  reviewLink: ['Review completa: {link}', 'Leia a review completa: {link}', 'Análise completa aqui: {link}'],
   avalPedido: [
-    'Quem já comprou aqui, conta pra gente como foi? 👀',
-    'Fala, pessoal! Quem já pegou jogo com a gente, deixa o feedback aí 👇',
-    'Comprou com a gente e deu tudo certo? Conta aqui pro pessoal 😄',
-    'A opinião de vocês ajuda demais quem tá chegando agora 🙌',
-    'Já jogou algo que pegou com a gente? Conta como foi a experiência 🎮',
-    'Seu feedback faz diferença pra quem ainda tá em dúvida 💬',
+    'Quem já comprou aqui, conta pra gente como foi?',
+    'Fala, pessoal! Quem já pegou jogo com a gente, deixa o feedback aí.',
+    'Comprou com a gente e deu tudo certo? Conta aqui pro pessoal.',
+    'A opinião de vocês ajuda demais quem tá chegando agora.',
+    'Já jogou algo que pegou com a gente? Conta como foi a experiência.',
+    'Seu feedback faz diferença pra quem ainda tá em dúvida.',
   ],
   avalLink: ['Deixa sua avaliação aqui: {url}', 'Sua avaliação vai aqui: {url}', 'Avalia a gente por aqui: {url}'],
   avalGrupo: [
-    'É só responder aqui no grupo — leva 10 segundos e ajuda muita gente 💚',
-    'Basta responder aqui no grupo, leva só 10 segundos e ajuda muita gente 💚',
-    'Responde aqui mesmo no grupo: são 10 segundos e ajuda quem tá chegando 💚',
+    'É só responder aqui no grupo — leva 10 segundos e ajuda muita gente',
+    'Basta responder aqui no grupo, leva só 10 segundos e ajuda muita gente',
+    'Responde aqui mesmo no grupo: são 10 segundos e ajuda quem tá chegando',
   ],
   avalFim: ['Ainda não comprou? {url}', 'Ainda não conhece a loja? {url}', 'Quer conhecer a loja? {url}'],
   noiteRodape: [
@@ -172,8 +172,7 @@ async function genBestSellers() {
     .slice(0, 5);
   if (!top.length) return null;
 
-  const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
-  const linhas = top.map((p, i) => `${medals[i]} ${cleanName(p.name)} — ${brl(lowestPrice(p))}`);
+  const linhas = top.map((p, i) => `${i + 1}. ${cleanName(p.name)} — ${brl(lowestPrice(p))}`);
   return (
     `${varia('bestHead')}\n\n` +
     linhas.join('\n') +
@@ -261,7 +260,7 @@ async function genNews() {
     const tituloPt = await ai.translate(n.title);
     const text =
       `${varia('newsHead')} ${n.source}!\n\n` +
-      `${n.emoji} ${tituloPt}\n\n` +
+      `${tituloPt}\n\n` +
       varia('newsLink', { link: n.link });
     return { text, image: n.image };
   }
@@ -306,9 +305,9 @@ async function genReviews() {
     const veredictoPt = veredito ? await ai.translate(veredito) : '';
     const compra = loja ? `\n${varia('reviewLoja', { link: loja.link })}` : '';
     const text =
-      `${varia('reviewHead')} ${r.source} ${r.emoji}\n\n` +
-      `🎮 *${jogo}*${plataforma ? ` — ${plataforma}` : ''}\n` +
-      (veredictoPt ? `\n💬 _${veredictoPt}_\n` : '') +
+      `${varia('reviewHead')} ${r.source}\n\n` +
+      `*${jogo}*${plataforma ? ` — ${plataforma}` : ''}\n` +
+      (veredictoPt ? `\n_${veredictoPt}_\n` : '') +
       compra +
       `\n\n${varia('reviewLink', { link: r.link })}`;
     return { text, image };

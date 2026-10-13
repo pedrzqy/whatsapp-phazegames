@@ -999,6 +999,45 @@ const CLI = '5541999998888';
     t('todo bom dia diz bom dia; toda boa noite diz boa noite',
       saud.DIA.every((x) => /bom dia|acordou/i.test(x)) && saud.NOITE.every((x) => /boa noite/i.test(x)));
 
+    // Pouco emoji: demais entrega que é robô. Uma saudação tem no máximo um,
+    // e emoji nunca fica no meio da frase.
+    const nEmoji = (x) => (String(x).match(/\p{Extended_Pictographic}/gu) || []).length;
+    t('toda saudação tem no máximo 1 emoji', [...saud.DIA, ...saud.NOITE].every((x) => nEmoji(x) <= 1));
+    t('  e emoji só no fim da mensagem, nunca no meio da frase',
+      [...saud.DIA, ...saud.NOITE].every((x) => !/\p{Extended_Pictographic}️? +\S/u.test(x)));
+    t('  e as saudações têm parágrafo', [...saud.DIA, ...saud.NOITE].filter((x) => x.includes('\n\n')).length >= 30);
+    {
+      const T = comunidade.TEXTOS;
+      t('toda variação de texto de post tem no máximo 1 emoji',
+        Object.values(T).flat().every((x) => nEmoji(x) <= 1));
+      const nerixE = require('./src/nerix');
+      const newsE = require('./src/news');
+      const salvoE = { lc: nerixE.listCoupons, lp: nerixE.listProducts, io: newsE.imageOk };
+      nerixE.listCoupons = async () => ({ data: [{ code: 'PHAZE10', is_active: true, is_secret: false, type: 'percentage', value: 10 }] });
+      nerixE.listProducts = async () => ({ data: [
+        { name: 'Zelda - Mídia Digital - Nintendo Switch', price: 100, promotional_price: 80, sales_count: 9, slug: 'zelda', images: ['a.jpg'] },
+        { name: 'Mario - Nintendo Switch', price: 90, sales_count: 5, slug: 'mario', images: ['b.jpg'] },
+      ] });
+      newsE.imageOk = async () => true;
+      let maxPost = 0;
+      const amostras = [];
+      for (let i = 0; i < 25; i++) {
+        const posts = [await comunidade.genCoupon(), await comunidade.genBestSellers(), await comunidade.genAvaliacao()];
+        const promo = await comunidade.genPromo();
+        if (promo) posts.push(promo.text);
+        for (const p of posts) { const tx = typeof p === 'string' ? p : p?.text; if (tx) { maxPost = Math.max(maxPost, nEmoji(tx)); amostras.push(tx); } }
+        comunidade._estado().promoRecent = [];
+      }
+      t('post montado (promo, cupom, mais vendidos, avaliação) tem no máximo 2 emojis', amostras.length > 0 && maxPost <= 2, String(maxPost));
+      t('  e nenhuma linha começa com emoji',
+        amostras.every((tx) => tx.split('\n').every((l) => !/^\p{Extended_Pictographic}/u.test(l))));
+      // Notícia e review: o título/cabeçalho traduzido não entra na conta, só o que o código acrescenta.
+      const montadoNews = `${T.newsHead[0]} Nintendo!\n\ntitulo\n\n${T.newsLink[0].replace('{link}', 'https://x')}`;
+      const montadoRev = `${T.reviewHead[0]} Site\n\n*Jogo* — Switch\n\n_veredito_\n${T.reviewLoja[0].replace('{link}', 'https://x')}\n\n${T.reviewLink[0].replace('{link}', 'https://x')}`;
+      t('notícia e review montadas têm no máximo 2 emojis', nEmoji(montadoNews) <= 2 && nEmoji(montadoRev) <= 2);
+      nerixE.listCoupons = salvoE.lc; nerixE.listProducts = salvoE.lp; newsE.imageOk = salvoE.io;
+    }
+
     // Sorteio: nunca uma das últimas 5.
     let recentes = [];
     let repetiu = false;

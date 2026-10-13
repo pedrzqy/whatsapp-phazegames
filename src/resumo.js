@@ -65,8 +65,8 @@ function horarioDoDia(dia) {
   return Math.max(0, Math.min(1439, horaEnvio() * 60 + desvio));
 }
 
-const TITULOS = ['📊', '📈', '🧾'];
-const DESPEDIDAS = ['Bom descanso, equipe! 💚', 'Bom descanso, time! 💚', 'Fim de expediente. Bom descanso, equipe! 💚'];
+const TITULOS = ['Resumo do dia', 'Resumo do dia da equipe', 'Resumo do dia, equipe'];
+const DESPEDIDAS = ['Bom descanso, equipe!', 'Bom descanso, time!', 'Fim de expediente. Bom descanso, equipe!'];
 
 /** Variação que não repete a última (índice gravado no estado). */
 function variar(chave, lista) {
@@ -126,7 +126,7 @@ async function montar({ agora = Date.now(), parcial = false } = {}) {
 
   const [, mes, d] = dia.split('-');
   const linhas = [
-    `${parcial ? '📊' : variar('titulo', TITULOS)} *${parcial ? 'Resumo parcial' : 'Resumo do dia'}* — ${d}/${mes}`,
+    `*${parcial ? 'Resumo parcial' : variar('titulo', TITULOS)}* —${d}/${mes}`,
     '',
     `💰 Vendas: *${v.qtd}* (${brl(v.total)})`,
   ];
