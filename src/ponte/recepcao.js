@@ -36,6 +36,7 @@ const cfg = require('./config');
 const janela = require('./janela');
 const fila = require('./fila');
 const marca = require('./marca');
+const variantes = require('./variantes');
 const { dados, persist, emTeste } = require('./estado');
 
 /** Quanto tempo uma metade do pedido espera pela outra. */
@@ -145,14 +146,38 @@ const CORPO_PEDE_FOTO =
   '1️⃣ *Foto da tela do console*, na página que está pedindo o código.\n\n' +
   `_Tem ${MINUTOS} minutos para mandar. Se passar, é só escrever *preciso do código* que a gente recomeça._`;
 
-const MSG_PEDE_FOTO = marca.abertura(
-  `Vou pegar seu código! Preciso de *2 coisas* 👇\n\n${CORPO_PEDE_FOTO}`,
-);
+// VARIAÇÕES (variantes.js): o mesmo pedido da foto em 3 formas, para o texto não
+// sair idêntico para dezenas de clientes seguidos. O prazo e o "preciso do
+// código" ficam em todas.
+const CORPOS_PEDE_FOTO = [
+  CORPO_PEDE_FOTO,
+  '1️⃣ *Foto da tela do console*, na página que pede o código.\n\n' +
+    `_Você tem ${MINUTOS} minutos. Passou disso, escreve *preciso do código* e a gente recomeça._`,
+  '1️⃣ Primeiro, a *foto da tela do console* onde ele pede o código.\n\n' +
+    `_Prazo de ${MINUTOS} minutos. Se passar, é só escrever *preciso do código*._`,
+];
 
+const INTROS_PEDE_FOTO = [
+  'Vou pegar seu código! Preciso de *2 coisas* 👇',
+  'Bora pegar seu código! São *2 coisas* 👇',
+  'Vou te ajudar com o código! Preciso de *2 coisas* 👇',
+];
+
+const INTROS_SUA_VEZ = [
+  'Chegou sua vez! 🎉 Preciso de *2 coisas* 👇',
+  'Sua vez chegou! 🎉 São *2 coisas* 👇',
+  'É a sua vez! 🎉 Preciso de *2 coisas* 👇',
+];
+
+const juntar = (intros) =>
+  intros.map((intro, i) => marca.abertura(`${intro}\n\n${CORPOS_PEDE_FOTO[i]}`));
+
+const VARIANTES_PEDE_FOTO = juntar(INTROS_PEDE_FOTO);
 /** O mesmo passo 1, para quem estava na espera e acabou de ser chamado. */
-const MSG_SUA_VEZ = marca.abertura(
-  `Chegou sua vez! 🎉 Preciso de *2 coisas* 👇\n\n${CORPO_PEDE_FOTO}`,
-);
+const VARIANTES_SUA_VEZ = juntar(INTROS_SUA_VEZ);
+
+const msgPedeFoto = (from) => variantes.escolher('pede_foto', VARIANTES_PEDE_FOTO, from);
+const msgSuaVez = (from) => variantes.escolher('sua_vez', VARIANTES_SUA_VEZ, from);
 
 /**
  * A fila está ocupada: avisa e NÃO pede nada ainda.
@@ -165,13 +190,21 @@ const MSG_SUA_VEZ = marca.abertura(
  * Dizendo antes, ele decide: espera tranquilo ou volta depois. E quando a vez
  * chegar o bot puxa a conversa, então ele não precisa ficar olhando o celular.
  */
-const msgEspera = (aFrente) =>
-  marca.abertura(
+const VARIANTES_ESPERA = [
+  (n) =>
     'Você está na fila do código ⏳\n\n' +
-      `Tem *${aFrente} ${aFrente === 1 ? 'pessoa' : 'pessoas'}* na sua frente.\n\n` +
-      'Assim que chegar sua vez eu te chamo aqui e a gente resolve na hora. ' +
-      'Não precisa mandar nada agora 👍',
-  );
+    `Tem ${variantes.pessoas(n)} na sua frente.\n\n` +
+    'Assim que chegar sua vez eu te chamo aqui e a gente resolve na hora. ' +
+    'Não precisa mandar nada agora 👍',
+  (n) =>
+    `Entrou na fila do código ⏳ Tem ${variantes.pessoas(n)} na sua frente.\n\n` +
+    'Quando for sua vez eu te chamo aqui, sem precisar mandar nada agora 👍',
+  (n) =>
+    `Fila do código ⏳ Na sua frente: ${variantes.pessoas(n)}.\n\n` +
+    'Chegando sua vez eu te aviso por aqui. Pode ficar tranquilo 👍',
+].map((f) => (n) => marca.abertura(f(n)));
+
+const msgEspera = (aFrente, from) => variantes.escolher('espera', VARIANTES_ESPERA, from, aFrente);
 
 // SEMPRE O PRIMEIRO LOGIN, e isso precisa estar escrito.
 //
@@ -179,18 +212,43 @@ const msgEspera = (aFrente) =>
 // manda o ÚLTIMO — que é o que aparece primeiro quando ele rola para cima, e é
 // o errado. Com o login errado o pedido sai, o outro lado responde código de
 // outra conta, e o erro só aparece na tela do cliente lá na frente.
-const MSG_PEDE_USUARIO =
+//
+// As variações abaixo (aprovadas pelo dono em conteúdo) mantêm sempre: mandar
+// *aqui no WhatsApp*, nada digitado no Switch, o *primeiro* login da entrega
+// (🔑 ou *Login:*), o exemplo 🔑 *abcd1234* e *sem a senha*. A #1 é o texto
+// aprovado original.
+const VARIANTES_PEDE_USUARIO = [
   'Foto recebida ✅\n\n' +
-  '2️⃣ Agora me manda *aqui no WhatsApp*, nesta conversa, o *login* da conta.\n\n' +
-  '⚠️ Não é pra digitar nada no Switch, é só me mandar aqui.\n\n' +
-  'O login é o *primeiro* que aparece na mensagem de entrega que a gente te mandou (do lado da 🔑 ou de *Login:*), igual na imagem 👆\n\n' +
-  '📌 Exemplo: se na entrega está 🔑 *abcd1234*, você me manda só: *abcd1234*\n\n' +
-  'Só o login, *sem a senha*.';
+    '2️⃣ Agora me manda *aqui no WhatsApp*, nesta conversa, o *login* da conta.\n\n' +
+    '⚠️ Não é pra digitar nada no Switch, é só me mandar aqui.\n\n' +
+    'O login é o *primeiro* que aparece na mensagem de entrega que a gente te mandou (do lado da 🔑 ou de *Login:*), igual na imagem 👆\n\n' +
+    '📌 Exemplo: se na entrega está 🔑 *abcd1234*, você me manda só: *abcd1234*\n\n' +
+    'Só o login, *sem a senha*.',
+  'Foto recebida ✅\n\n' +
+    '2️⃣ Agora me manda *aqui no WhatsApp* o *login* da conta (nada de digitar no Switch).\n\n' +
+    'É o *primeiro* login da mensagem de entrega, do lado da 🔑 ou de *Login:* 👆\n\n' +
+    '📌 Se está 🔑 *abcd1234*, manda só: *abcd1234*\n\n' +
+    'Só o login, *sem a senha*.',
+  'Recebi a foto ✅\n\n' +
+    'Agora o *login*: manda *aqui no WhatsApp*, sem digitar nada no Switch.\n\n' +
+    'Use o *primeiro* login da mensagem de entrega (do lado da 🔑 ou de *Login:*) 👆\n\n' +
+    '📌 Na entrega está 🔑 *abcd1234*? Manda só *abcd1234*, *sem a senha*.',
+];
 
-const MSG_USUARIO_INVALIDO =
+const VARIANTES_USUARIO_INVALIDO = [
   'Não entendi o login 🤔\n\n' +
-  'Não precisa digitar nada no Switch. Me manda *aqui no WhatsApp* só o login: o *primeiro* da mensagem de entrega, do lado da 🔑 ou de *Login:* 👆\n\n' +
-  '📌 Exemplo: se na entrega está 🔑 *abcd1234*, você me manda só: *abcd1234*';
+    'Não precisa digitar nada no Switch. Me manda *aqui no WhatsApp* só o login: o *primeiro* da mensagem de entrega, do lado da 🔑 ou de *Login:* 👆\n\n' +
+    '📌 Exemplo: se na entrega está 🔑 *abcd1234*, você me manda só: *abcd1234*',
+  'Não consegui ler o login 🤔\n\n' +
+    'Manda *aqui no WhatsApp* (nada no Switch) só o *primeiro* login da mensagem de entrega, do lado da 🔑 ou de *Login:* 👆\n\n' +
+    '📌 🔑 *abcd1234* → manda só *abcd1234*, *sem a senha*',
+  'Hmm, esse login não deu 🤔\n\n' +
+    'É o *primeiro* da mensagem de entrega (do lado da 🔑 ou de *Login:*), e você manda *aqui no WhatsApp*, sem digitar nada no Switch 👆\n\n' +
+    '📌 Exemplo: 🔑 *abcd1234* → manda só *abcd1234*, *sem a senha*',
+];
+
+const msgPedeUsuario = (from) => variantes.escolher('pede_usuario', VARIANTES_PEDE_USUARIO, from);
+const msgUsuarioInvalido = (from) => variantes.escolher('usuario_invalido', VARIANTES_USUARIO_INVALIDO, from);
 
 /** Qual imagem acompanha cada instrução. Nome, não bytes: quem lê o disco é o handlers. */
 const EXEMPLO_DO_AVISO = {
@@ -281,7 +339,7 @@ function avaliar(from, texto, imagem) {
   // ── Caso 4: veio a foto que pedimos no fluxo guiado ────────
   // Só aqui a foto ganha resposta. Fora do fluxo ela é guardada calada (Caso 7).
   if (imagem && guardado?.etapa === 'foto') {
-    return responder('usuario', MSG_PEDE_USUARIO, { imagem, etapa: 'usuario' });
+    return responder('usuario', msgPedeUsuario(from), { imagem, etapa: 'usuario' });
   }
 
   // ── Caso 5: veio só o usuário ──────────────────────────────
@@ -340,7 +398,7 @@ function avaliar(from, texto, imagem) {
     }
 
     if (repetiuAgora(guardado, 'invalido')) return { acao: 'ignorar' };
-    return responder('invalido', MSG_USUARIO_INVALIDO, { errosUsuario: erros });
+    return responder('invalido', msgUsuarioInvalido(from), { errosUsuario: erros });
   }
 
   return { acao: 'ignorar' };
@@ -423,7 +481,7 @@ function chamarProximoDaEspera() {
   const [from] = esperandoVez();
   if (!from) return null;
 
-  const r = fazerResponder(from)('foto', MSG_SUA_VEZ, { etapa: 'foto' });
+  const r = fazerResponder(from)('foto', msgSuaVez(from), { etapa: 'foto' });
   console.log(`[ponte/recepcao] ${from} saiu da espera — pedindo a foto`);
   return { from, mensagem: r.mensagem, exemplo: r.exemplo };
 }
@@ -504,7 +562,7 @@ function abrir(from, responder, guardado) {
   const aFrente = quantosNaFrente(from);
   if (aFrente > 0) {
     if (repetiuAgora(guardado, 'espera')) return { acao: 'ignorar' };
-    return responder('espera', msgEspera(aFrente), {
+    return responder('espera', msgEspera(aFrente, from), {
       usuario: null,
       imagem: null,
       etapa: 'esperando_vez',
@@ -528,7 +586,8 @@ function abrir(from, responder, guardado) {
   // horário. Fechado, o aviso diz quando volta e em quanto tempo, que é a única
   // pergunta que a pessoa tem naquele momento.
   const j = janela.estado();
-  const msg = j.aberta ? MSG_PEDE_FOTO : `${MSG_PEDE_FOTO}
+  const pedeFoto = msgPedeFoto(from);
+  const msg = j.aberta ? pedeFoto : `${pedeFoto}
 
 _${j.avisoCliente}_`;
   return responder('foto', msg, { usuario: null, imagem: null, etapa: 'foto' });

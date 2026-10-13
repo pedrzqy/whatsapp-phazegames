@@ -30,6 +30,7 @@ fsMod.rmSync(DATA_TESTE, { recursive: true, force: true });
 process.env.PONTE_DATA_DIR = DATA_TESTE;
 
 process.env.PONTE_ATIVA = 'true';
+process.env.PONTE_HUMANIZA = 'false'; // sem esperas de digitando nos testes
 process.env.PONTE_OPERADOR_NUMERO = '5541999999999';
 process.env.PONTE_SELLER_CHAT_TITLE = 'loja';
 

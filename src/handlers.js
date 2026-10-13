@@ -21,6 +21,7 @@ const operador = require('./ponte/operador');
 const vendas = require('./vendas');
 const exemplo = require('./exemplo');
 const recepcao = require('./ponte/recepcao');
+const humaniza = require('./ponte/humaniza');
 const ponte = require('./ponte');
 const menu = require('./menu');
 const tools = require('./tools');
@@ -277,7 +278,7 @@ async function acaoDoMenu(acao, { from, pushName }) {
     store.saveContact(from, { menuNode: null });
     const inicio = recepcao.iniciarFluxo(from);
     if (inicio.acao === 'responder') {
-      await sender.send(from, inicio.mensagem, exemplo.opcoes(inicio.exemplo));
+      await humaniza.enviar(from, inicio.mensagem, exemplo.opcoes(inicio.exemplo));
     }
     return true;
   }
@@ -465,7 +466,7 @@ async function handleMessage(msg) {
 
     if (r.acao === 'responder') {
       store.saveContact(from, { lastSeen: Date.now(), name: pushName || store.getContact(from)?.name });
-      await sender.send(from, r.mensagem, exemplo.opcoes(r.exemplo));
+      await humaniza.enviar(from, r.mensagem, exemplo.opcoes(r.exemplo));
       return;
     }
 
@@ -496,7 +497,7 @@ async function handleMessage(msg) {
       store.saveContact(from, { lastSeen: Date.now(), name: pushName || store.getContact(from)?.name });
       const nome = store.getContact(from)?.name || pushName || from;
       const res = await ponte.pedirCodigo(from, nome, r.usuario, r.imagem);
-      await sender.send(from, res.mensagem);
+      await humaniza.enviar(from, res.mensagem);
       return;
     }
   }
@@ -560,7 +561,7 @@ async function handleMessage(msg) {
       store.saveContact(from, { paused: false, menuNode: null, modoIA: false });
       const inicio = recepcao.iniciarFluxo(from);
       if (inicio.acao === 'responder') {
-        await sender.send(from, inicio.mensagem, exemplo.opcoes(inicio.exemplo));
+        await humaniza.enviar(from, inicio.mensagem, exemplo.opcoes(inicio.exemplo));
       }
     }
     return;

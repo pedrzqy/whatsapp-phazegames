@@ -103,6 +103,23 @@ module.exports = {
   // Pausa entre o vídeo e o pedido de avaliação.
   tutorialAvaliacaoMs: num(process.env.PONTE_TUTORIAL_AVALIACAO_MS, 8000),
 
+  // Envio humanizado do fluxo do código (humaniza.js): "digitando..." antes de
+  // cada mensagem, espera proporcional ao texto, jitter entre mensagens do mesmo
+  // cliente e espaçamento global entre quaisquer duas mensagens (pico de vendas).
+  // PONTE_HUMANIZA=false desliga (testes).
+  humaniza: process.env.PONTE_HUMANIZA !== 'false',
+  humanizaMinMs: num(process.env.PONTE_HUMANIZA_MIN_MS, 1500),
+  humanizaMaxMs: num(process.env.PONTE_HUMANIZA_MAX_MS, 4000),
+  humanizaMsPorChar: num(process.env.PONTE_HUMANIZA_MS_POR_CHAR, 12),
+  // Entrega do código: espera curta (cliente olhando a tela).
+  humanizaRapidoMinMs: num(process.env.PONTE_HUMANIZA_RAPIDO_MIN_MS, 800),
+  humanizaRapidoMaxMs: num(process.env.PONTE_HUMANIZA_RAPIDO_MAX_MS, 2500),
+  // Entre duas mensagens QUAISQUER (global) e entre duas ao MESMO cliente.
+  humanizaEspacoMinMs: num(process.env.PONTE_ESPACO_MIN_MS, 700),
+  humanizaEspacoMaxMs: num(process.env.PONTE_ESPACO_MAX_MS, 1500),
+  humanizaJitterMinMs: num(process.env.PONTE_JITTER_MIN_MS, 400),
+  humanizaJitterMaxMs: num(process.env.PONTE_JITTER_MAX_MS, 1500),
+
   // Alerta de braço parado (captcha/login perdido, ou sem contato) também no
   // grupo da equipe. 'false' desliga; o operador no privado segue avisado.
   alertaGrupo: process.env.PONTE_ALERTA_GRUPO !== 'false',

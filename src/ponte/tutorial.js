@@ -15,23 +15,48 @@
  */
 
 const cfg = require('./config');
-const sender = require('../sender');
+const humaniza = require('./humaniza');
+const variantes = require('./variantes');
 const exemplo = require('../exemplo');
 
-const MSG_VIDEO =
+// 3 formas de cada texto (variantes.js). A legenda do vídeo fica profissional;
+// o pedido de avaliação segue carinhoso. A #1 de cada é o texto original.
+const VARIANTES_VIDEO = [
   '🎮 *Tutorial de instalação*\n\n' +
-  'Seu código foi entregue com sucesso ✅\n\n' +
-  'Assista ao vídeo e siga o passo a passo para concluir a instalação do jogo no seu Nintendo Switch.\n\n' +
-  'Em caso de dúvida, é só responder por aqui.';
+    'Seu código foi entregue com sucesso ✅\n\n' +
+    'Assista ao vídeo e siga o passo a passo para concluir a instalação do jogo no seu Nintendo Switch.\n\n' +
+    'Em caso de dúvida, é só responder por aqui.',
+  '🎮 *Tutorial de instalação*\n\n' +
+    'Código entregue com sucesso ✅\n\n' +
+    'Assista ao vídeo e siga o passo a passo para instalar o jogo no seu Nintendo Switch. ' +
+    'Qualquer dúvida, é só responder por aqui.',
+  '🎮 *Tutorial de instalação*\n\n' +
+    'Seu código foi entregue ✅\n\n' +
+    'Siga o passo a passo do vídeo para concluir a instalação no seu Nintendo Switch. ' +
+    'Se precisar de ajuda, estamos à disposição.',
+];
+const MSG_VIDEO = VARIANTES_VIDEO[0];
 
-function mensagemAvaliacao() {
-  return (
-    'Ahh, e uma coisinha 🥺💚\n\n' +
+const VARIANTES_AVALIACAO = [
+  'Ahh, e uma coisinha 🥺💚\n\n' +
     'Se deu tudo certo e você curtiu, deixa uma *avaliação* lá no nosso *grupo oficial*? ' +
     'Pode ser um print do jogo rodando, uma foto ou só umas palavrinhas 🎮✨\n\n' +
     'Ainda não tá no grupo? Me pede aqui que eu te adiciono rapidinho! Lá sempre rola *cupom de desconto* 🎁\n\n' +
-    'Bom jogo! 🕹️'
-  );
+    'Bom jogo! 🕹️',
+  'Uma coisinha antes de ir 🥺💚\n\n' +
+    'Deu tudo certo? Deixa uma *avaliação* no nosso *grupo oficial*! ' +
+    'Pode ser um print do jogo rodando ou só umas palavrinhas 🎮\n\n' +
+    'Ainda não tá no grupo? Me pede aqui que eu te adiciono rapidinho, lá sempre rola *cupom de desconto* 🎁\n\n' +
+    'Bom jogo! 🕹️',
+  'Ahh, antes que eu esqueça 💚\n\n' +
+    'Se você curtiu, deixa uma *avaliação* no *grupo oficial*? ' +
+    'Um print ou umas palavrinhas já ajudam muito 🥹✨\n\n' +
+    'Ainda sem grupo? Me fala que eu te adiciono rapidinho, tem *cupom de desconto* lá 🎁\n\n' +
+    'Bom jogo! 🎮',
+];
+
+function mensagemAvaliacao(destino) {
+  return variantes.escolher('avaliacao', VARIANTES_AVALIACAO, destino);
 }
 
 const jaEnviado = new Set();
@@ -42,7 +67,7 @@ async function enviar(atendimento) {
   try {
     const video = exemplo.tutorialInstalacao();
     if (video) {
-      await sender.send(atendimento.from, MSG_VIDEO, { video, fileName: 'tutorial-instalacao.mp4' });
+      await humaniza.enviar(atendimento.from, variantes.escolher('video', VARIANTES_VIDEO, atendimento.from), { video, fileName: 'tutorial-instalacao.mp4' });
     } else {
       console.warn('[ponte] tutorial: vídeo indisponível — mando só o pedido de avaliação');
     }
@@ -53,7 +78,7 @@ async function enviar(atendimento) {
 
   try {
     if (cfg.tutorialAvaliacaoMs > 0) await dormir(cfg.tutorialAvaliacaoMs);
-    await sender.send(atendimento.from, mensagemAvaliacao());
+    await humaniza.enviar(atendimento.from, mensagemAvaliacao(atendimento.from));
   } catch (err) {
     console.warn(`[ponte] tutorial: pedido de avaliação falhou para ${atendimento.from}: ${err.message}`);
   }
@@ -68,4 +93,4 @@ function agendar(atendimento) {
   return enviar(atendimento).catch((err) => console.warn('[ponte] tutorial:', err.message));
 }
 
-module.exports = { agendar, mensagemAvaliacao, MSG_VIDEO };
+module.exports = { agendar, mensagemAvaliacao, MSG_VIDEO, VARIANTES_VIDEO, VARIANTES_AVALIACAO };

@@ -36,6 +36,7 @@ process.env.EVOLUTION_API_KEY = 'teste';
 process.env.PONTE_OPERADOR_NUMERO = '5541999999999';
 process.env.PONTE_BRACO_KEY = 'teste';
 process.env.PONTE_ATIVA = 'true';
+process.env.PONTE_HUMANIZA = 'false'; // sem esperas de digitando nos testes
 process.env.BOT_AUTOREPLY = 'true';
 process.env.ADMIN_TOKEN = 'token-de-teste';
 

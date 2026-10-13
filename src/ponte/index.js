@@ -36,6 +36,8 @@ const politica = require('./politica');
 const marca = require('./marca');
 const { dados, persist, persistAgora, proximoId, emTeste, registrarIgnorado } = require('./estado');
 const sender = require('../sender');
+const humaniza = require('./humaniza');
+const variantes = require('./variantes');
 
 async function alertar(texto, imagem, nomeArquivo) {
   if (!cfg.operador.numeros.length) {
@@ -143,10 +145,7 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
     // relê enquanto aguarda.
     return {
       aceito: true,
-      mensagem: marca.assinar(
-        `Anotei! Tem ${aFrente} ${aFrente === 1 ? 'pessoa' : 'pessoas'} na sua frente. ` +
-          `Já já pego seu código e te mando 👍`,
-      ),
+      mensagem: marca.assinar(variantes.escolher('anotei', VARIANTES_ANOTEI, from, aFrente)),
     };
   }
 
@@ -175,7 +174,7 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
       // tem mais nada a fazer, só esperar.
       mensagem: testando
         ? `⏳ *Aguardando confirmação* — manda *#ok ${tarefa.id}* para o envio sair.`
-        : 'Recebi tudo ✅ Já te retorno com o código 👍',
+        : variantes.escolher('recebi_tudo', VARIANTES_RECEBI_TUDO, from),
     };
   }
 
@@ -184,13 +183,41 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
   // cabeçalho — marcar na origem deixaria a marca duas vezes na mesma
   // mensagem, uma delas dentro do itálico.
   const j = janela.estado();
-  return { aceito: true, mensagem: j.aberta ? j.avisoCliente : marca.assinar(j.avisoCliente) };
+  return {
+    aceito: true,
+    mensagem: j.aberta
+      ? variantes.escolher('pegando', [j.avisoCliente, ...VARIANTES_PEGANDO_EXTRA], from)
+      : marca.assinar(j.avisoCliente),
+  };
 }
 
+// VARIAÇÕES (variantes.js) das mensagens deste fluxo; a #1 de cada é o texto
+// original. Mesmo conteúdo essencial, formas diferentes.
+const VARIANTES_ANOTEI = [
+  (n) =>
+    `Anotei! Tem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente. ` +
+    'Já já pego seu código e te mando 👍',
+  (n) => `Anotado! Tem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente, já já te mando o código 👍`,
+  (n) => `Recebi ✅ Tem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente. Te aviso quando for sua vez 👍`,
+];
+const VARIANTES_RECEBI_TUDO = [
+  'Recebi tudo ✅ Já te retorno com o código 👍',
+  'Tudo certo, recebi ✅ Já te mando o código 👍',
+  'Recebi ✅ Assim que o código sair eu te aviso aqui 👍',
+];
+const VARIANTES_PEGANDO_EXTRA = [
+  'Pegando seu código, já te mando 👍',
+  'Já tô pegando seu código, um instante 👍',
+];
+
 /** Primeira vez que o cliente fala com os envios congelados: avisa com calma. */
-const MSG_INSTABILIDADE =
+const VARIANTES_INSTABILIDADE = [
   'Estamos com uma instabilidade por aqui, mas você continua na fila e eu te chamo ' +
-  'assim que voltar 🙏';
+    'assim que voltar 🙏',
+  'Estamos com uma instabilidade por aqui 🙏 Você continua na fila e eu te chamo quando voltar.',
+  'Deu uma instabilidade por aqui, mas sua vaga na fila está garantida 🙏 Te chamo assim que normalizar.',
+];
+const MSG_INSTABILIDADE = VARIANTES_INSTABILIDADE[0];
 
 /**
  * O que dizer ao cliente que pediu código com os envios congelados.
@@ -198,10 +225,12 @@ const MSG_INSTABILIDADE =
  * dele recebem o retorno neutro de sempre, sem repetir a explicação.
  */
 function respostaCongelada(atendimento) {
-  if (atendimento.avisoCongelado) return 'Recebi tudo ✅ Já te retorno com o código 👍';
+  if (atendimento.avisoCongelado) {
+    return variantes.escolher('recebi_tudo', VARIANTES_RECEBI_TUDO, atendimento.from);
+  }
   atendimento.avisoCongelado = true;
   persistAgora();
-  return MSG_INSTABILIDADE;
+  return variantes.escolher('instabilidade', VARIANTES_INSTABILIDADE, atendimento.from);
 }
 
 /**
@@ -802,7 +831,13 @@ async function tentarResponder(atendimento, textoDele) {
   if (linha.resposta === null) {
     if (linha.avisarCliente) {
       try {
-        await sender.send(atendimento.from, linha.avisarCliente);
+        await humaniza.enviar(
+          atendimento.from,
+          // A linha padrão ("em andamento") tem 3 formas; as demais saem como estão.
+          linha.avisarCliente === VARIANTES_ANDAMENTO[0]
+            ? variantes.escolher('andamento', VARIANTES_ANDAMENTO, atendimento.from)
+            : linha.avisarCliente,
+        );
       } catch (err) {
         console.error('[ponte] não avisei o cliente:', err.message);
       }
@@ -879,16 +914,33 @@ async function escolherComModelo(textoDele) {
   }
 }
 
+const VARIANTES_ANDAMENTO = [
+  'Tá em andamento aqui! Assim que chegar eu te mando 👍',
+  'Segue em andamento ✅ Chegando, eu te mando aqui 👍',
+  'Já tô nisso! Assim que sair eu te passo 👍',
+];
+
+const VARIANTES_CODIGO = [
+  (cod) =>
+    `Chegou o código da sua conta:\n\n*${cod}*\n\n` +
+    'Digita ele na tela de verificação. Se der erro ou expirar, me avisa que peço outro 👍',
+  (cod) =>
+    `Seu código chegou:\n\n*${cod}*\n\n` +
+    'Digita na tela de verificação. Deu erro ou expirou? Me avisa que peço outro 👍',
+  (cod) =>
+    `Código da sua conta:\n\n*${cod}*\n\n` +
+    'É só digitar na tela de verificação. Se não funcionar, me chama que eu peço outro 👍',
+];
+
 /** Entrega o código ao cliente, encerra a vez e chama o próximo. */
 async function entregarCodigo(atendimento, cod) {
   // Assinada: é a mensagem que o cliente guarda e printa, o momento de maior
   // valor percebido do atendimento inteiro.
-  await sender.send(
+  // `rapido`: o cliente está olhando a tela, a espera de "digitando" é curta.
+  await humaniza.enviar(
     atendimento.from,
-    marca.assinar(
-      `Chegou o código da sua conta:\n\n*${cod}*\n\n` +
-        `Digita ele na tela de verificação. Se der erro ou expirar, me avisa que peço outro 👍`,
-    ),
+    marca.assinar(variantes.escolher('codigo', VARIANTES_CODIGO, atendimento.from, cod)),
+    { rapido: true },
   );
 
   console.log(`[ponte] código ${cod} entregue a ${atendimento.from} (${atendimento.usuario})`);
@@ -1006,9 +1058,13 @@ async function entregarSenha(atendimento, senha) {
  */
 async function encerrarComEntrega(atendimento) {
   try {
-    await sender.send(
+    await humaniza.enviar(
       atendimento.from,
-      'Chegou o retorno da sua conta! Só vou conferir uma coisa aqui e já te mando 👍',
+      variantes.escolher('retorno_conta', [
+        'Chegou o retorno da sua conta! Só vou conferir uma coisa aqui e já te mando 👍',
+        'Chegou o retorno da conta! Vou conferir um detalhe e já te mando 👍',
+        'Retorno da sua conta chegou ✅ Deixa eu conferir uma coisa e já te passo 👍',
+      ], atendimento.from),
     );
   } catch (err) {
     // O aviso é secundário; a fila destravar é o que não pode falhar.
@@ -1033,8 +1089,19 @@ async function encerrarComEntrega(atendimento) {
 async function chamarQuemEsperava() {
   const chamado = require('./recepcao').chamarProximoDaEspera();
   if (!chamado) return;
-  await sender.send(chamado.from, chamado.mensagem, require('../exemplo').opcoes(chamado.exemplo));
+  await humaniza.enviar(chamado.from, chamado.mensagem, require('../exemplo').opcoes(chamado.exemplo));
 }
+
+const VARIANTES_VEZ_RETORNO = [
+  'Chegou sua vez! Já te retorno com o código 👍',
+  'Sua vez chegou! Em breve te mando o código 👍',
+  'É a sua vez! Já te retorno com o código 👍',
+];
+const VARIANTES_VEZ_PEGANDO = [
+  'Chegou sua vez! Já estou pegando seu código 👍',
+  'Sua vez chegou! Já tô pegando o código 👍',
+  'É sua vez! Pegando seu código agora 👍',
+];
 
 async function promoverProximo() {
   const at = fila.ativo();
@@ -1071,11 +1138,14 @@ async function promoverProximo() {
   // promessa de uma ação que depende do operador e que o #nao pode cancelar.
   const tarefa = await despachar(at);
 
-  await sender.send(
+  const aguardando = Boolean(tarefa && tarefa.estado === 'aguardando_aprovacao');
+  await humaniza.enviar(
     at.from,
-    tarefa && tarefa.estado === 'aguardando_aprovacao'
-      ? 'Chegou sua vez! Já te retorno com o código 👍'
-      : 'Chegou sua vez! Já estou pegando seu código 👍',
+    variantes.escolher(
+      aguardando ? 'vez_retorno' : 'vez_pegando',
+      aguardando ? VARIANTES_VEZ_RETORNO : VARIANTES_VEZ_PEGANDO,
+      at.from,
+    ),
   );
 }
 
@@ -1355,7 +1425,7 @@ async function vigiarCongelamento() {
       at.avisoCongelado = true;
       persistAgora();
       try {
-        await sender.send(at.from, MSG_INSTABILIDADE);
+        await humaniza.enviar(at.from, variantes.escolher('instabilidade', VARIANTES_INSTABILIDADE, at.from));
       } catch (err) {
         console.error(`[ponte] aviso de instabilidade a ${at.from} falhou:`, err.message);
       }
@@ -1533,13 +1603,19 @@ async function vigiarColeta() {
   await alertar('🔌 *Coleta de volta.* Os envios seguem normalmente.');
 }
 
-const MSG_EXPIROU_PADRAO =
+const VARIANTES_EXPIROU_PADRAO = [
   'Seu código está demorando mais que o normal. Já estou vendo isso — ' +
-  'se preferir, posso te passar pra um atendente 👍';
+    'se preferir, posso te passar pra um atendente 👍',
+  'Seu código está demorando mais que o normal. Já estou vendo, e se preferir te passo pra um atendente 👍',
+  'Tá demorando mais que o normal pro seu código. Já estou olhando; se quiser, chamo um atendente 👍',
+];
 
-const MSG_DESCULPA_EXPIROU =
+const VARIANTES_DESCULPA_EXPIROU = [
   'Poxa, me desculpa 😔 Não consegui pegar o seu código dessa vez.\n\n' +
-  'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚';
+    'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚',
+  'Desculpa, não consegui pegar seu código dessa vez 😔 Não perdeu nada: manda *#inicio* aqui que eu te coloco na fila de novo 💚',
+  'Poxa, não deu pra pegar seu código agora 😔 Me desculpa! Manda *#inicio* e eu te coloco de volta na fila 💚',
+];
 
 async function tick() {
   try {
@@ -1556,7 +1632,12 @@ async function tick() {
       // expira aqui sempre esperou por nós; o `usuario` fica como trava.
       // Congelado nem entra neste laço (acima), mas a checagem fica explícita.
       const desculpa = Boolean(v.usuario) && limites.disjuntor().estado !== 'aberto';
-      await sender.send(v.from, desculpa ? MSG_DESCULPA_EXPIROU : MSG_EXPIROU_PADRAO);
+      await humaniza.enviar(
+        v.from,
+        desculpa
+          ? variantes.escolher('desculpa_expirou', VARIANTES_DESCULPA_EXPIROU, v.from)
+          : variantes.escolher('expirou_padrao', VARIANTES_EXPIROU_PADRAO, v.from),
+      );
       await alertar(`⏱️ Atendimento de *${v.nome}* (\`${v.usuario}\`) expirou sem código.`);
     }
     // Fila vazia com gente parada na entrada: ninguém ia chamá-los (o gancho

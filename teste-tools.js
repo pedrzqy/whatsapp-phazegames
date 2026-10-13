@@ -24,6 +24,7 @@ process.env.DEEPSEEK_API_KEY = '';
 
 process.env.NERIX_API_KEY = 'teste';
 process.env.PONTE_OPERADOR_NUMERO = '5541999999999';
+process.env.PONTE_HUMANIZA = 'false';
 process.env.PONTE_BRACO_KEY = 'teste';
 process.env.PONTE_DATA_DIR = require('path').join(require('os').tmpdir(), 'phaze-teste-tools');
 // O agendador do grupo precisa de um grupo para agir, e de nao estar em

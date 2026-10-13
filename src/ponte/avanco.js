@@ -27,11 +27,21 @@ const cfg = require('./config');
 const fila = require('./fila');
 const limites = require('./limites');
 const { persistAgora } = require('./estado');
-const sender = require('../sender');
+const humaniza = require('./humaniza');
+const variantes = require('./variantes');
 
-const MSG_PROXIMO = 'Agora você é o *próximo* 👀 Fica de olho aqui que já já é sua vez.';
-const msgPerto = (n) =>
-  `Tá chegando! Agora tem *${n} ${n === 1 ? 'pessoa' : 'pessoas'}* na sua frente 👀`;
+// 3 formas de cada aviso (variantes.js); a #1 é o texto original.
+const VARIANTES_PROXIMO = [
+  'Agora você é o *próximo* 👀 Fica de olho aqui que já já é sua vez.',
+  'Você é o *próximo* 👀 Já já eu te chamo aqui.',
+  'Sua vez tá chegando: você é o *próximo* 👀 Fica por aqui.',
+];
+const VARIANTES_PERTO = [
+  (n) => `Tá chegando! Agora tem ${variantes.pessoas(n)} na sua frente 👀`,
+  (n) => `Já tem só ${variantes.pessoas(n)} na sua frente 👀`,
+  (n) => `Falta pouco! São ${variantes.pessoas(n)} na sua frente ⏳`,
+];
+const MSG_PROXIMO = VARIANTES_PROXIMO[0];
 
 /** Qual aviso (se algum) cabe para quem ouviu `item.aFrenteAvisado` e agora tem `aFrente` na frente. */
 function decidir(item, aFrente) {
@@ -55,7 +65,12 @@ async function avisarUm(from, item, aFrente) {
   item.aFrenteAvisado = aFrente;
   persistAgora();
   try {
-    await sender.send(from, qual === 'proximo' ? MSG_PROXIMO : msgPerto(aFrente));
+    await humaniza.enviar(
+      from,
+      qual === 'proximo'
+        ? variantes.escolher('proximo', VARIANTES_PROXIMO, from)
+        : variantes.escolher('perto', VARIANTES_PERTO, from, aFrente),
+    );
   } catch (err) {
     console.error(`[ponte/avanco] aviso a ${from} falhou:`, err.message);
   }
@@ -82,4 +97,4 @@ async function avisar() {
   }
 }
 
-module.exports = { avisar, decidir, MSG_PROXIMO };
+module.exports = { avisar, decidir, MSG_PROXIMO, VARIANTES_PROXIMO, VARIANTES_PERTO };

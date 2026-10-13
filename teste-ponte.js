@@ -54,6 +54,7 @@ for (const k of [
 }
 
 process.env.PONTE_ATIVA = 'true';
+process.env.PONTE_HUMANIZA = 'false'; // sem esperas de digitando nos testes
 // O pos-codigo (video + avaliacao) tem bloco proprio de teste; nos demais fica fora.
 process.env.PONTE_TUTORIAL_VIDEO = 'false';
 process.env.PONTE_TUTORIAL_AVALIACAO_MS = '0';
@@ -400,7 +401,7 @@ const barrado = recepcao.iniciarFluxo(NA_ESPERA);
 t('avisa que tem gente na frente', /na sua frente/i.test(barrado.mensagem || ''), barrado.mensagem);
 t('  e NÃO pede a foto ainda', !/foto da tela do console/i.test(barrado.mensagem || ''));
 t('  nem manda imagem à toa', !barrado.exemplo, String(barrado.exemplo));
-t('  e diz que não precisa mandar nada', /não precisa mandar nada/i.test(barrado.mensagem || ''));
+t('  e diz que não precisa mandar nada', /(não precisa|sem precisar) mandar nada/i.test(barrado.mensagem || ''));
 t('  ele fica na lista de espera', recepcao.esperandoVez().includes(NA_ESPERA));
 
 // Quem JÁ está na fila com dados entregues não vira o próprio concorrente.
@@ -410,7 +411,7 @@ t('quem já está na fila não conta a si mesmo', recepcao.quantosNaFrente(OCUPA
 // Liberou: é a vez dele, e agora sim vem o passo 1.
 const chamado = recepcao.chamarProximoDaEspera();
 t('quando libera, o próximo é chamado', chamado?.from === NA_ESPERA, String(chamado?.from));
-t('  dizendo que chegou a vez', /chegou sua vez/i.test(chamado?.mensagem || ''), chamado?.mensagem);
+t('  dizendo que chegou a vez', /sua vez/i.test(chamado?.mensagem || ''), chamado?.mensagem);
 t('  agora sim pedindo a foto', /foto da tela do console/i.test(chamado?.mensagem || ''));
 t('  com a imagem junto', chamado?.exemplo === 'console', String(chamado?.exemplo));
 t('  e ele sai da espera', !recepcao.esperandoVez().includes(NA_ESPERA));
@@ -3770,7 +3771,7 @@ const OP = '5541999999999';
     let codigoFalha = false;
     senderT.send = async (para, txt, opts = {}) => {
       if (opts.video && videoFalha) throw new Error('video recusado');
-      if (!opts.video && codigoFalha && /Chegou o código/.test(String(txt))) throw new Error('envio do codigo falhou');
+      if (!opts.video && codigoFalha && /\*\d{4,}\*/.test(String(txt))) throw new Error('envio do codigo falhou');
       saiuT.push({ para, texto: String(txt), video: Boolean(opts.video) });
     };
     const esperarT = () => new Promise((r) => setTimeout(r, 30));
@@ -3865,7 +3866,7 @@ const OP = '5541999999999';
     let base = 0;
     const cli = (n) => `5541988${String(1000 + base + n)}`;
     const entrarV = async (n) => (await ponteMod.pedirCodigo(cli(n), `Cli${n}`, `usuario${n}x`, null));
-    const PROX = /Agora você é o \*próximo\*/;
+    const PROX = /\*próximo\*/;
 
     // ── A) avanço da fila ──
     for (let n = 1; n <= 6; n++) await entrarV(n); // 1 ativo, 2..6 esperando (1..5 na frente)
@@ -3890,7 +3891,7 @@ const OP = '5541999999999';
     t('A: quem já foi avisado de "perto" não ganha outro', para(cli(5)).length === 1);
     t('A: ouviu 5, agora 3: aviso de "perto"', para(cli(6), /3 pessoas/).length === 1);
     t('A: texto do próximo é o combinado',
-      para(cli(4))[0]?.texto === 'Agora você é o *próximo* 👀 Fica de olho aqui que já já é sua vez.');
+      require('./src/ponte/avanco').VARIANTES_PROXIMO.includes(para(cli(4))[0]?.texto));
 
     // Congelado: ninguém fala, e ao voltar fala uma vez.
     limitesMod.abrir('teste', null, { automatico: false });
@@ -4010,14 +4011,17 @@ const OP = '5541999999999';
     saiu = [];
     await ponteMod.tick();
     t('C: expirou: o operador é avisado', para(OPV, /expirou sem código/).length === 1);
-    const pedido = para(cli(1), /desculpa/);
+    const pedido = para(cli(1), /desculpa/i);
     t('C: o cliente recebe o pedido de desculpa com o #inicio', pedido.length === 1 && /#inicio/.test(pedido[0].texto), JSON.stringify(para(cli(1))));
-    t('C: texto exato', pedido[0]?.texto ===
+    t('C: texto é uma das variantes combinadas', [
       'Poxa, me desculpa 😔 Não consegui pegar o seu código dessa vez.\n\n' +
-      'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚');
+        'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚',
+      'Desculpa, não consegui pegar seu código dessa vez 😔 Não perdeu nada: manda *#inicio* aqui que eu te coloco na fila de novo 💚',
+      'Poxa, não deu pra pegar seu código agora 😔 Me desculpa! Manda *#inicio* e eu te coloco de volta na fila 💚',
+    ].includes(pedido[0]?.texto));
     t('C: uma mensagem só ao cliente', para(cli(1)).length === 1);
     await ponteMod.tick();
-    t('C: tick seguinte não repete', para(cli(1), /desculpa/).length === 1);
+    t('C: tick seguinte não repete', para(cli(1), /desculpa/i).length === 1);
 
     // Sem login entregue (abandonou no meio): sem pedido de desculpa.
     zerarV();
@@ -4041,6 +4045,112 @@ const OP = '5541999999999';
     senderV.send = antesV;
     zerarV();
     dd.grupoVendas = 'off';
+  }
+
+  // ── Variações de texto + envio humanizado (anti-restrição do número) ──
+  bloco('variações: rodízio sem repetir e conteúdo essencial do login');
+  {
+    const variantesMod = require('./src/ponte/variantes');
+    variantesMod.zerar();
+    const lista = ['a', 'b', 'c'];
+    let repetiuCliente = false;
+    let repetiuGlobal = false;
+    let antC = null;
+    let antG = null;
+    const vistas = new Set();
+    for (let i = 0; i < 300; i++) {
+      const cliente = i % 2 ? 'cli-1' : 'cli-2';
+      const v = variantesMod.escolher('teste', lista, cliente);
+      vistas.add(v);
+      if (v === antG) repetiuGlobal = true;
+      antG = v;
+    }
+    t('sorteia as 3 variantes', vistas.size === 3);
+    t('nunca a mesma seguida no envio global', !repetiuGlobal);
+    variantesMod.zerar();
+    for (let i = 0; i < 100; i++) {
+      const v = variantesMod.escolher('teste2', lista, 'cli-x');
+      if (v === antC) repetiuCliente = true;
+      antC = v;
+    }
+    t('nunca a mesma seguida para o mesmo cliente', !repetiuCliente);
+    t('variante função recebe os argumentos', variantesMod.escolher('f', [(n) => `n=${n}`], 'x', 7) === 'n=7');
+
+    // Login: todas as formas (pelo fluxo real) trazem o conteúdo aprovado.
+    const vistos = new Set();
+    for (let i = 0; i < 60; i++) {
+      const c = `55419770${String(i).padStart(5, '0')}`;
+      recepcao.iniciarFluxo(c);
+      const pede = recepcao.avaliar(c, '', 'v.jpg').mensagem;
+      const inval = recepcao.avaliar(c, 'nao sei qual e', null).mensagem;
+      for (const m of [pede, inval]) {
+        vistos.add(m);
+        const ok = /aqui no WhatsApp|aqui no \*?WhatsApp/i.test(m.replace(/\*/g, '')) &&
+          /Switch/.test(m) && /primeiro/.test(m) && /🔑/.test(m) && /Login:/.test(m) &&
+          /abcd1234/.test(m);
+        if (!ok) t('variante de login mantém o conteúdo aprovado', false, m);
+      }
+      if (!/sem a senha/.test(pede)) t('pedido de login diz sem a senha', false, pede);
+    }
+    t('várias formas de pedir/recusar login saem', vistos.size >= 4, String(vistos.size));
+  }
+
+  bloco('envio humanizado: digitando antes, espaçamento global, nada se perde');
+  {
+    const humaniza = require('./src/ponte/humaniza');
+    const cfgH = require('./src/ponte/config');
+    const senderH = require('./src/sender');
+    const evoH = require('./src/evolution');
+    const antesSend = senderH.send;
+    const antesPres = evoH.sendPresence;
+    const guarda = { ...cfgH };
+    const eventos = [];
+    senderH.send = async (para, txt, opts = {}) => { eventos.push({ tipo: 'envio', para, txt, em: Date.now(), opts }); return true; };
+    evoH.sendPresence = async (para, pres) => { eventos.push({ tipo: 'presence', para, pres, em: Date.now() }); };
+    Object.assign(cfgH, {
+      humaniza: true,
+      humanizaMinMs: 60, humanizaMaxMs: 120, humanizaMsPorChar: 0,
+      humanizaRapidoMinMs: 20, humanizaRapidoMaxMs: 40,
+      humanizaEspacoMinMs: 80, humanizaEspacoMaxMs: 120,
+      humanizaJitterMinMs: 100, humanizaJitterMaxMs: 150,
+    });
+    try {
+      humaniza.zerar();
+      const t0 = Date.now();
+      // 8 clientes ao mesmo tempo + 2 mensagens seguidas ao primeiro.
+      const envios = [];
+      for (let i = 0; i < 8; i++) envios.push(humaniza.enviar(`c${i}`, `msg ${i}`));
+      envios.push(humaniza.enviar('c0', 'segunda do c0'));
+      envios.push(humaniza.enviar('c0', 'terceira do c0', { rapido: true }));
+      await Promise.all(envios);
+      const sai = eventos.filter((e) => e.tipo === 'envio');
+      t('nenhuma mensagem foi descartada', sai.length === 10, String(sai.length));
+      t('cada envio é precedido de composing', eventos.filter((e) => e.pres === 'composing').length === 10);
+      const primeiroEnvio = eventos.findIndex((e) => e.tipo === 'envio');
+      t('o composing vem antes do primeiro envio', eventos[0].pres === 'composing' && primeiroEnvio > 0);
+      let minGap = Infinity;
+      for (let i = 1; i < sai.length; i++) minGap = Math.min(minGap, sai[i].em - sai[i - 1].em);
+      t('espaçamento global mínimo entre quaisquer duas mensagens', minGap >= 70, `min ${minGap}ms`);
+      t('rajada de 10 não sai no mesmo segundo', sai[sai.length - 1].em - t0 >= 700, `${sai[sai.length - 1].em - t0}ms`);
+      t('a ordem das mensagens do mesmo cliente é preservada',
+        sai.filter((e) => e.para === 'c0').map((e) => e.txt).join('|') === 'msg 0|segunda do c0|terceira do c0');
+      t('o sender não repete a digitação nem a reação', sai.every((e) => e.opts.typing === false && e.opts.reaction === false));
+      t('opts.rapido não vaza para o sender', sai.every((e) => !('rapido' in e.opts)));
+
+      // Desligado: vai direto, sem presence nem espera.
+      eventos.length = 0;
+      cfgH.humaniza = false;
+      const t1 = Date.now();
+      await humaniza.enviar('cz', 'direto');
+      t('desligado envia direto, sem presence', eventos.length === 1 && eventos[0].tipo === 'envio' && Date.now() - t1 < 50);
+    } finally {
+      Object.assign(cfgH, guarda);
+      senderH.send = antesSend;
+      evoH.sendPresence = antesPres;
+    }
+    const cfgPadrao = require('./src/ponte/config');
+    t('padrão de produção: humaniza ligado e tetos de 4s / 2,5s',
+      guarda.humanizaMaxMs === 4000 && guarda.humanizaRapidoMaxMs === 2500 && guarda.humanizaEspacoMinMs === 700 && guarda.humanizaEspacoMaxMs === 1500 && cfgPadrao === cfgH);
   }
 
   evolutionMod.estadoInstancia = estadoReal;
