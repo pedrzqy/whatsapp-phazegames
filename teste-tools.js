@@ -1057,6 +1057,61 @@ nerix.checkPayment = async (codigo) => {
 
   globalThis.fetch = fetchReal;
 
+  // ── Portão com horário do dia (base + desvio) ──────────────
+  //
+  // Abrir e fechar também mudam de minuto a cada dia, mas continua sendo UMA
+  // mudança por fronteira, nunca uma por volta.
+  bloco('portao com desvio diario: uma mudanca por fronteira');
+  {
+    const com = require('./src/community');
+    const cfgP = require('./src/config').community;
+    const chavesP = require('./src/chaves');
+    const evoP = require('./src/evolution');
+    const salvoP = { dry: cfgP.dryRun, lig: cfgP.portaoLigado, ligada: chavesP.ligada, now: Date.now, portao: evoP.portaoDoGrupo };
+    cfgP.dryRun = false; cfgP.portaoLigado = true;
+    chavesP.ligada = () => true;
+    const eventos = []; // { dia, min, aberto }
+    let diaAtual = null; let minAtual = 0;
+    evoP.portaoDoGrupo = async (jid, aberto) => { eventos.push({ dia: diaAtual, min: minAtual, aberto }); return {}; };
+    const est = com._estado();
+    est.grupoAberto = false; est.portaoManualAte = 0; est.portaoTentaApos = 0; est.portaoFalhas = 0;
+
+    const base = Date.UTC(2032, 0, 1, 3, 0); // 00:00 BRT
+    const dias = ['2032-01-01', '2032-01-02', '2032-01-03', '2032-01-04'];
+    let voltas = 0;
+    for (let d = 0; d < dias.length; d++) {
+      for (let m = 0; m < 1440; m++) {
+        diaAtual = dias[d]; minAtual = m;
+        Date.now = () => base + (d * 1440 + m) * 60000;
+        await com.ajustarPortao(Math.floor(m / 60), m % 60, dias[d]);
+        voltas++;
+      }
+    }
+    const aberturas = eventos.filter((e) => e.aberto);
+    const fechamentos = eventos.filter((e) => !e.aberto);
+    t('4 dias, 1440 voltas por dia: exatamente 1 abrir e 1 fechar por dia',
+      voltas === 5760 && aberturas.length === 4 && fechamentos.length === 4 && eventos.length === 8,
+      `${eventos.length} chamadas`);
+    t('  alternando abrir/fechar', eventos.every((e, i) => e.aberto === (i % 2 === 0)));
+    t('  abre entre 8:30 e 9:30 e fecha entre 22:30 e 23:30',
+      aberturas.every((e) => e.min >= 510 && e.min <= 570) && fechamentos.every((e) => e.min >= 1350 && e.min <= 1410),
+      eventos.map((e) => `${e.dia.slice(8)}:${e.aberto ? 'A' : 'F'}${e.min}`).join(' '));
+    const dif = (l) => l.every((e, i) => i === 0 || Math.abs(e.min - l[i - 1].min) >= 15);
+    t('  o minuto de abrir difere >= 15 min de um dia para o outro', dif(aberturas), aberturas.map((e) => e.min).join(','));
+    t('  o de fechar também', dif(fechamentos), fechamentos.map((e) => e.min).join(','));
+
+    // Erro da API continua com recuo, agora no caminho com minuto.
+    est.grupoAberto = true; est.portaoTentaApos = 0; est.portaoFalhas = 0;
+    let tentativas = 0;
+    evoP.portaoDoGrupo = async () => { tentativas++; throw new Error('boom'); };
+    const hojeBase = Date.UTC(2032, 0, 1, 3, 0);
+    for (let m = 1400; m < 1400 + 25; m++) { Date.now = () => hojeBase + m * 60000; await com.ajustarPortao(23, 59, '2032-01-01'); }
+    t('erro com horário do dia: uma tentativa e recuo, sem laço apertado', tentativas === 1, String(tentativas));
+
+    Date.now = salvoP.now; chavesP.ligada = salvoP.ligada; evoP.portaoDoGrupo = salvoP.portao;
+    cfgP.dryRun = salvoP.dry; cfgP.portaoLigado = salvoP.lig;
+  }
+
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));
   process.exit(falhas ? 1 : 0);
 })();
