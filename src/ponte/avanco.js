@@ -32,14 +32,14 @@ const variantes = require('./variantes');
 
 // 3 formas de cada aviso (variantes.js); a #1 é o texto original.
 const VARIANTES_PROXIMO = [
-  'Agora você é o *próximo*.\n\nFica de olho aqui que já já é sua vez.',
-  'Você é o *próximo*.\n\nJá já eu te chamo aqui.',
-  'Sua vez tá chegando, você é o *próximo*.\n\nFica por aqui.',
+  'Agora você é o *próximo*. 🎯\n\nFica de olho aqui que já já é sua vez. 👀',
+  'Você é o *próximo*. 🚀\n\nJá já eu te chamo aqui. 😉',
+  'Sua vez tá chegando, você é o *próximo*. ⏳\n\nFica por aqui. 👍',
 ];
 const VARIANTES_PERTO = [
-  (n) => `Tá chegando!\n\nAgora tem ${variantes.pessoas(n)} na sua frente.`,
-  (n) => `Já tem só ${variantes.pessoas(n)} na sua frente.`,
-  (n) => `Falta pouco!\n\nSão ${variantes.pessoas(n)} na sua frente.`,
+  (n) => `Tá chegando! 🚀\n\nAgora tem ${variantes.pessoas(n)} na sua frente. 👀`,
+  (n) => `Já tem só ${variantes.pessoas(n)} na sua frente. 🎉`,
+  (n) => `Falta pouco! ⏳\n\nSão ${variantes.pessoas(n)} na sua frente. 🙌`,
 ];
 const MSG_PROXIMO = VARIANTES_PROXIMO[0];
 

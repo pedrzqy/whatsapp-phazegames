@@ -143,8 +143,8 @@ const MINUTOS = Math.round(VALIDADE_MS / 60000);
 // Dizer o prazo não faz ninguém andar mais rápido, mas transforma "o bot me
 // ignorou" em "passou do tempo, mando de novo" — e a segunda frase tem saída.
 const CORPO_PEDE_FOTO =
-  '1. *Foto da tela do console*, na página que está pedindo o código.\n\n' +
-  `_Tem ${MINUTOS} minutos para mandar. Se passar, é só escrever *preciso do código* que a gente recomeça._`;
+  '1. *Foto da tela do console*, na página que está pedindo o código. 📸\n\n' +
+  `_Tem ${MINUTOS} minutos para mandar. Se passar, é só escrever *preciso do código* que a gente recomeça._ ⏰`;
 
 // VARIAÇÕES (variantes.js): o mesmo pedido da foto em 3 formas, para o texto não
 // sair idêntico para dezenas de clientes seguidos. O prazo e o "preciso do
@@ -152,22 +152,22 @@ const CORPO_PEDE_FOTO =
 // emoji separando frases entrega que é bot.
 const CORPOS_PEDE_FOTO = [
   CORPO_PEDE_FOTO,
-  '1. *Foto da tela do console*, na página que pede o código.\n\n' +
-    `_Você tem ${MINUTOS} minutos. Passou disso, escreve *preciso do código* e a gente recomeça._`,
-  '1. Primeiro, a *foto da tela do console* onde ele pede o código.\n\n' +
-    `_Prazo de ${MINUTOS} minutos. Se passar, é só escrever *preciso do código*._`,
+  '1. *Foto da tela do console*, na página que pede o código. 📱\n\n' +
+    `_Você tem ${MINUTOS} minutos. Passou disso, escreve *preciso do código* e a gente recomeça._ ⏳`,
+  '1. Primeiro, a *foto da tela do console* onde ele pede o código. 📷\n\n' +
+    `_Prazo de ${MINUTOS} minutos. Se passar, é só escrever *preciso do código*._ 🕐`,
 ];
 
 const INTROS_PEDE_FOTO = [
-  'Vou pegar seu código! Preciso de *2 coisas*.',
-  'Bora pegar seu código! São *2 coisas*.',
-  'Vou te ajudar com o código! Preciso de *2 coisas*.',
+  'Vou pegar seu código! Preciso de *2 coisas*. ✨',
+  'Bora pegar seu código! São *2 coisas*. 🎮',
+  'Vou te ajudar com o código! Preciso de *2 coisas*. 😉',
 ];
 
 const INTROS_SUA_VEZ = [
-  'Chegou sua vez! Preciso de *2 coisas*.',
-  'Sua vez chegou! São *2 coisas*.',
-  'É a sua vez! Preciso de *2 coisas*.',
+  'Chegou sua vez! Preciso de *2 coisas*. 🎉',
+  'Sua vez chegou! São *2 coisas*. 🚀',
+  'É a sua vez! Preciso de *2 coisas*. 🙌',
 ];
 
 const juntar = (intros) =>
@@ -193,18 +193,18 @@ const msgSuaVez = (from) => variantes.escolher('sua_vez', VARIANTES_SUA_VEZ, fro
  */
 const VARIANTES_ESPERA = [
   (n) =>
-    'Você está na fila do código.\n\n' +
-    `Tem ${variantes.pessoas(n)} na sua frente.\n\n` +
+    'Você está na fila do código. ⏳\n\n' +
+    `Tem ${variantes.pessoas(n)} na sua frente. 👀\n\n` +
     'Assim que chegar sua vez eu te chamo aqui e a gente resolve na hora. ' +
-    'Não precisa mandar nada agora.',
+    'Não precisa mandar nada agora. 😉',
   (n) =>
-    'Entrou na fila do código.\n\n' +
+    'Entrou na fila do código. 📋\n\n' +
     `Tem ${variantes.pessoas(n)} na sua frente.\n\n` +
-    'Quando for sua vez eu te chamo aqui, sem precisar mandar nada agora.',
+    'Quando for sua vez eu te chamo aqui, sem precisar mandar nada agora. 👍',
   (n) =>
-    'Fila do código.\n\n' +
-    `Na sua frente: ${variantes.pessoas(n)}.\n\n` +
-    'Chegando sua vez eu te aviso por aqui. Pode ficar tranquilo, não precisa mandar nada.',
+    'Fila do código. 🎟\n\n' +
+    `Na sua frente: ${variantes.pessoas(n)}. 👥\n\n` +
+    'Chegando sua vez eu te aviso por aqui. Pode ficar tranquilo, não precisa mandar nada. 😊',
 ].map((f) => (n) => marca.abertura(f(n)));
 
 const msgEspera = (aFrente, from) => variantes.escolher('espera', VARIANTES_ESPERA, from, aFrente);
@@ -224,31 +224,31 @@ const VARIANTES_PEDE_USUARIO = [
   'Foto recebida ✅\n\n' +
     '2. Agora me manda *aqui no WhatsApp*, nesta conversa, o *login* da conta.\n\n' +
     'Não é pra digitar nada no Switch, é só me mandar aqui.\n\n' +
-    'O login é o *primeiro* que aparece na mensagem de entrega que a gente te mandou (do lado da 🔑 ou de *Login:*), igual na imagem.\n\n' +
+    'O login é o *primeiro* que aparece na mensagem de entrega que a gente te mandou (do lado da 🔑 ou de *Login:*), igual na imagem. 👀\n\n' +
     'Exemplo: se na entrega está 🔑 *abcd1234*, você me manda só: *abcd1234*\n\n' +
-    'Só o login, *sem a senha*.',
-  'Foto recebida.\n\n' +
+    'Só o login, *sem a senha*. 👍',
+  'Foto recebida. 📸\n\n' +
     '2. Agora me manda *aqui no WhatsApp* o *login* da conta (nada de digitar no Switch).\n\n' +
-    'É o *primeiro* login da mensagem de entrega, do lado da 🔑 ou de *Login:*, igual na imagem.\n\n' +
+    'É o *primeiro* login da mensagem de entrega, do lado da 🔑 ou de *Login:*, igual na imagem. 🔎\n\n' +
     'Se está 🔑 *abcd1234*, manda só: *abcd1234*\n\n' +
-    'Só o login, *sem a senha*.',
-  'Recebi a foto.\n\n' +
+    'Só o login, *sem a senha*. 🔒',
+  'Recebi a foto. 👌\n\n' +
     'Agora o *login*: manda *aqui no WhatsApp*, sem digitar nada no Switch.\n\n' +
     'Use o *primeiro* login da mensagem de entrega (do lado da 🔑 ou de *Login:*), igual na imagem.\n\n' +
-    'Na entrega está 🔑 *abcd1234*? Manda só *abcd1234*, *sem a senha*.',
+    'Na entrega está 🔑 *abcd1234*? Manda só *abcd1234*, *sem a senha*. 🙏',
 ];
 
 const VARIANTES_USUARIO_INVALIDO = [
   'Não entendi o login 🤔\n\n' +
     'Não precisa digitar nada no Switch. Me manda *aqui no WhatsApp* só o login: o *primeiro* da mensagem de entrega, do lado da 🔑 ou de *Login:*, igual na imagem.\n\n' +
     'Exemplo: se na entrega está 🔑 *abcd1234*, você me manda só: *abcd1234*\n\n' +
-    'Só o login, *sem a senha*.',
-  'Não consegui ler o login.\n\n' +
+    'Só o login, *sem a senha*. 🙏',
+  'Não consegui ler o login. 😕\n\n' +
     'Manda *aqui no WhatsApp* (nada no Switch) só o *primeiro* login da mensagem de entrega, do lado da 🔑 ou de *Login:*, igual na imagem.\n\n' +
-    'Se está 🔑 *abcd1234*, manda só *abcd1234*, *sem a senha*.',
-  'Hmm, esse login não deu.\n\n' +
+    'Se está 🔑 *abcd1234*, manda só *abcd1234*, *sem a senha*. 👍',
+  'Hmm, esse login não deu. 🧐\n\n' +
     'É o *primeiro* da mensagem de entrega (do lado da 🔑 ou de *Login:*), e você manda *aqui no WhatsApp*, sem digitar nada no Switch.\n\n' +
-    'Exemplo: 🔑 *abcd1234*, você manda só *abcd1234*, *sem a senha*.',
+    'Exemplo: 🔑 *abcd1234*, você manda só *abcd1234*, *sem a senha*. 😉',
 ];
 
 const msgPedeUsuario = (from) => variantes.escolher('pede_usuario', VARIANTES_PEDE_USUARIO, from);
@@ -351,7 +351,7 @@ function avaliar(from, texto, imagem) {
     return responder(
       'foto',
       'Anotei o usuário! Manda também o *print da tela de verificação* que eu ' +
-        'pego seu código 👍',
+        'pego seu código ✅👍',
       { usuario, imagem: null, etapa: 'foto' }
     );
   }

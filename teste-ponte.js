@@ -4014,10 +4014,10 @@ const OP = '5541999999999';
     const pedido = para(cli(1), /desculpa/i);
     t('C: o cliente recebe o pedido de desculpa com o #inicio', pedido.length === 1 && /#inicio/.test(pedido[0].texto), JSON.stringify(para(cli(1))));
     t('C: texto é uma das variantes combinadas', [
-      'Poxa, me desculpa. Não consegui pegar o seu código dessa vez.\n\n' +
+      'Poxa, me desculpa. Não consegui pegar o seu código dessa vez. 😔\n\n' +
         'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚',
-      'Desculpa, não consegui pegar seu código dessa vez.\n\nNão perdeu nada: manda *#inicio* aqui que eu te coloco na fila de novo.',
-      'Poxa, não deu pra pegar seu código agora. Me desculpa!\n\nManda *#inicio* e eu te coloco de volta na fila 💚',
+      'Desculpa, não consegui pegar seu código dessa vez. 🙏\n\nNão perdeu nada: manda *#inicio* aqui que eu te coloco na fila de novo. 💚',
+      'Poxa, não deu pra pegar seu código agora. Me desculpa! 😢\n\nManda *#inicio* e eu te coloco de volta na fila 💚',
     ].includes(pedido[0]?.texto));
     t('C: uma mensagem só ao cliente', para(cli(1)).length === 1);
     await ponteMod.tick();
@@ -4092,8 +4092,9 @@ const OP = '5541999999999';
       }
       if (!/sem a senha/.test(pede)) t('pedido de login diz sem a senha', false, pede);
     }
-    // Texto de bot: no máximo 1 emoji por mensagem (a 🔑 do login não conta,
-    // ela cita o símbolo da entrega) e nunca emoji separando frases na mesma linha.
+    // Texto de bot: 2 a 3 emojis por mensagem (1 a 2 nas de uma linha só; a legenda do
+    // tutorial, no máximo 2), sempre no FIM da linha. A 🔑 do login não conta nem
+    // entra na regra: ela cita o símbolo da entrega e fica no meio da linha.
     {
       const fsT = require('fs');
       const EMOJI = /\p{Extended_Pictographic}\uFE0F?/gu;
@@ -4127,17 +4128,20 @@ const OP = '5541999999999';
       }
       const iniR = fonteIndex.indexOf("escolher('retorno_conta', [");
       const blocoR = fonteIndex.slice(iniR, fonteIndex.indexOf('], atendimento.from', iniR));
-      for (const m of blocoR.match(/'[^'\n]+'/g) || []) todas.push(['retorno_conta', (0, eval)(m)]);
+      for (const m of (blocoR.match(/'[^'\n]+'/g) || []).filter((x) => x.includes(' '))) todas.push(['retorno_conta', (0, eval)(m)]);
       const ruins = [];
       for (const [nome, txt] of todas) {
         const sem = txt.split('🔑').join('');
         const n = (sem.match(EMOJI) || []).length;
-        if (n > 1) ruins.push(nome + ': ' + n + ' emojis');
+        const umaLinha = !txt.trim().includes('\n');
+        const [min, max] = nome === 'video' ? [1, 2] : umaLinha ? [1, 2] : [2, 3];
+        if (n < min || n > max) ruins.push(nome + ': ' + n + ' emojis (esperado ' + min + ' a ' + max + ')');
+        if (sem.split('\n').some((l) => /^\s*\p{Extended_Pictographic}/u.test(l))) ruins.push(nome + ': emoji no começo da linha');
         if (sem.split('\n').some((l) => SEPARADOR.test(l))) ruins.push(nome + ': emoji separando frases');
         if (/[0-9]\uFE0F?\u20E3/u.test(txt)) ruins.push(nome + ': keycap');
       }
-      t('todas as variantes: no máximo 1 emoji e nenhum emoji separando frases', ruins.length === 0, ruins.join(' | '));
-      t('conferiu todas as variantes do fluxo', todas.length >= 60, String(todas.length));
+      t('todas as variantes: 2 a 3 emojis, só no fim da linha, sem keycap', ruins.length === 0, ruins.join(' | '));
+      t('conferiu todas as variantes do fluxo', todas.length >= 59, String(todas.length));
     }
     t('várias formas de pedir/recusar login saem', vistos.size >= 4, String(vistos.size));
   }

@@ -91,7 +91,7 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
   // NADA do que sai daqui para o cliente cita a origem do código.
   // Para ele, quem gera é a Phaze — e essa é a única versão que existe.
   if (!cfg.ativa) {
-    return { aceito: false, mensagem: 'O sistema de código está em manutenção. Já te aviso 🙏' };
+    return { aceito: false, mensagem: 'O sistema de código está em manutenção. Já te aviso 🙏🔧' };
   }
 
   // Congelado NÃO rejeita: o pedido entra na fila normalmente e fica parado
@@ -128,7 +128,7 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
   if (!lim.permitido) {
     return {
       aceito: false,
-      mensagem: 'Você já pediu vários códigos agora há pouco. Deixa os anteriores chegarem primeiro 👍',
+      mensagem: 'Você já pediu vários códigos agora há pouco. Deixa os anteriores chegarem primeiro 👍⏳',
     };
   }
 
@@ -195,26 +195,26 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
 // original. Mesmo conteúdo essencial, formas diferentes.
 const VARIANTES_ANOTEI = [
   (n) =>
-    `Anotei! Tem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente.\n\n` +
-    'Já já pego seu código e te mando.',
-  (n) => `Anotado!\n\nTem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente, já já te mando o código.`,
-  (n) => `Recebi tudo certinho.\n\nTem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente, te aviso quando for sua vez.`,
+    `Anotei! Tem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente. 📝\n\n` +
+    'Já já pego seu código e te mando. 🚀',
+  (n) => `Anotado! ✅\n\nTem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente, já já te mando o código. 👍`,
+  (n) => `Recebi tudo certinho. 👌\n\nTem ${n} ${n === 1 ? 'pessoa' : 'pessoas'} na sua frente, te aviso quando for sua vez. ⏳`,
 ];
 const VARIANTES_RECEBI_TUDO = [
-  'Recebi tudo, já te retorno com o código.',
-  'Tudo certo, recebi.\n\nJá te mando o código.',
-  'Recebi.\n\nAssim que o código sair eu te aviso aqui.',
+  'Recebi tudo, já te retorno com o código. ✅👍',
+  'Tudo certo, recebi. 👍\n\nJá te mando o código. 🚀',
+  'Recebi. 👌\n\nAssim que o código sair eu te aviso aqui. 🔔',
 ];
 const VARIANTES_PEGANDO_EXTRA = [
-  'Pegando seu código, já te mando.',
-  'Já tô pegando seu código, um instante.',
+  'Pegando seu código, já te mando. ⏳',
+  'Já tô pegando seu código, um instante. 🏃',
 ];
 
 /** Primeira vez que o cliente fala com os envios congelados: avisa com calma. */
 const VARIANTES_INSTABILIDADE = [
-  'Estamos com uma instabilidade por aqui.\n\nVocê continua na fila e eu te chamo assim que voltar.',
-  'Estamos com uma instabilidade por aqui, mas sua vaga na fila está garantida.\n\nTe chamo assim que normalizar.',
-  'Deu uma instabilidade por aqui.\n\nVocê continua na fila, eu te chamo quando voltar.',
+  'Estamos com uma instabilidade por aqui. 🔧\n\nVocê continua na fila e eu te chamo assim que voltar. 🙏',
+  'Estamos com uma instabilidade por aqui, mas sua vaga na fila está garantida. ✅\n\nTe chamo assim que normalizar. 😉',
+  'Deu uma instabilidade por aqui. 😅\n\nVocê continua na fila, eu te chamo quando voltar. 🔔',
 ];
 const MSG_INSTABILIDADE = VARIANTES_INSTABILIDADE[0];
 
@@ -735,7 +735,7 @@ async function receberDoFornecedor(entrada) {
   try {
     await sender.send(
       at.from,
-      'Chegou o retorno da sua conta! Só vou conferir uma coisa aqui e já te falo 👍',
+      'Chegou o retorno da sua conta! Só vou conferir uma coisa aqui e já te falo 👍🔍',
     );
   } catch (err) {
     // O aviso é secundário; a fila destravar é o que não pode falhar.
@@ -914,21 +914,21 @@ async function escolherComModelo(textoDele) {
 }
 
 const VARIANTES_ANDAMENTO = [
-  'Tá em andamento aqui!\n\nAssim que chegar eu te mando.',
-  'Segue em andamento.\n\nChegando, eu te mando aqui.',
-  'Já tô nisso!\n\nAssim que sair eu te passo.',
+  'Tá em andamento aqui! 🚀\n\nAssim que chegar eu te mando. 📩',
+  'Segue em andamento. ⏳\n\nChegando, eu te mando aqui. 👍',
+  'Já tô nisso! 💪\n\nAssim que sair eu te passo. 😉',
 ];
 
 const VARIANTES_CODIGO = [
   (cod) =>
-    `Chegou o código da sua conta:\n\n*${cod}*\n\n` +
-    'Digita ele na tela de verificação.\n\nSe der erro ou expirar, me avisa que peço outro.',
+    `Chegou o código da sua conta: 🎉\n\n*${cod}*\n\n` +
+    'Digita ele na tela de verificação. 🔐\n\nSe der erro ou expirar, me avisa que peço outro. 😉',
   (cod) =>
-    `Seu código chegou:\n\n*${cod}*\n\n` +
-    'Digita na tela de verificação.\n\nDeu erro ou expirou? Me avisa que peço outro.',
+    `Seu código chegou: 🚀\n\n*${cod}*\n\n` +
+    'Digita na tela de verificação.\n\nDeu erro ou expirou? Me avisa que peço outro. 🙌',
   (cod) =>
-    `Código da sua conta:\n\n*${cod}*\n\n` +
-    'É só digitar na tela de verificação.\n\nSe não funcionar, me chama que eu peço outro.',
+    `Código da sua conta: ✨\n\n*${cod}*\n\n` +
+    'É só digitar na tela de verificação. 👍\n\nSe não funcionar, me chama que eu peço outro. 🙂',
 ];
 
 /** Entrega o código ao cliente, encerra a vez e chama o próximo. */
@@ -1060,9 +1060,9 @@ async function encerrarComEntrega(atendimento) {
     await humaniza.enviar(
       atendimento.from,
       variantes.escolher('retorno_conta', [
-        'Chegou o retorno da sua conta!\n\nSó vou conferir uma coisa aqui e já te mando.',
-        'Chegou o retorno da conta!\n\nVou conferir um detalhe e já te mando.',
-        'Retorno da sua conta chegou.\n\nDeixa eu conferir uma coisa e já te passo.',
+        'Chegou o retorno da sua conta! 🎉\n\nSó vou conferir uma coisa aqui e já te mando. 👍',
+        'Chegou o retorno da conta! ✅\n\nVou conferir um detalhe e já te mando. 🔍',
+        'Retorno da sua conta chegou. 📬\n\nDeixa eu conferir uma coisa e já te passo. 😉',
       ], atendimento.from),
     );
   } catch (err) {
@@ -1092,14 +1092,14 @@ async function chamarQuemEsperava() {
 }
 
 const VARIANTES_VEZ_RETORNO = [
-  'Chegou sua vez!\n\nJá te retorno com o código.',
-  'Sua vez chegou!\n\nEm breve te mando o código.',
-  'É a sua vez!\n\nJá te retorno com o código.',
+  'Chegou sua vez! 🎉\n\nJá te retorno com o código. 👍',
+  'Sua vez chegou! 🚀\n\nEm breve te mando o código. 😉',
+  'É a sua vez! ✨\n\nJá te retorno com o código. 🙌',
 ];
 const VARIANTES_VEZ_PEGANDO = [
-  'Chegou sua vez!\n\nJá estou pegando seu código.',
-  'Sua vez chegou!\n\nJá tô pegando o código.',
-  'É sua vez!\n\nPegando seu código agora.',
+  'Chegou sua vez! 🔔\n\nJá estou pegando seu código. ⏳',
+  'Sua vez chegou! 🙌\n\nJá tô pegando o código. 👍',
+  'É sua vez! ✨\n\nPegando seu código agora. 🚀',
 ];
 
 async function promoverProximo() {
@@ -1603,16 +1603,16 @@ async function vigiarColeta() {
 }
 
 const VARIANTES_EXPIROU_PADRAO = [
-  'Seu código está demorando mais que o normal.\n\nJá estou vendo isso, e se preferir posso te passar pra um atendente.',
-  'Seu código está demorando mais que o normal.\n\nJá estou vendo, e se preferir te passo pra um atendente.',
-  'Tá demorando mais que o normal pro seu código.\n\nJá estou olhando; se quiser, chamo um atendente.',
+  'Seu código está demorando mais que o normal. ⏳\n\nJá estou vendo isso, e se preferir posso te passar pra um atendente. 🙋',
+  'Seu código está demorando mais que o normal. 😕\n\nJá estou vendo, e se preferir te passo pra um atendente. 🙋',
+  'Tá demorando mais que o normal pro seu código. ⏳\n\nJá estou olhando; se quiser, chamo um atendente. 🙂',
 ];
 
 const VARIANTES_DESCULPA_EXPIROU = [
-  'Poxa, me desculpa. Não consegui pegar o seu código dessa vez.\n\n' +
+  'Poxa, me desculpa. Não consegui pegar o seu código dessa vez. 😔\n\n' +
     'Pode ficar tranquilo que não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo e a gente resolve 💚',
-  'Desculpa, não consegui pegar seu código dessa vez.\n\nNão perdeu nada: manda *#inicio* aqui que eu te coloco na fila de novo.',
-  'Poxa, não deu pra pegar seu código agora. Me desculpa!\n\nManda *#inicio* e eu te coloco de volta na fila 💚',
+  'Desculpa, não consegui pegar seu código dessa vez. 🙏\n\nNão perdeu nada: manda *#inicio* aqui que eu te coloco na fila de novo. 💚',
+  'Poxa, não deu pra pegar seu código agora. Me desculpa! 😢\n\nManda *#inicio* e eu te coloco de volta na fila 💚',
 ];
 
 async function tick() {
