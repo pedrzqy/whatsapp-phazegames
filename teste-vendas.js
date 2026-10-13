@@ -1007,6 +1007,7 @@ const CLI = '5541999998888';
     t('toda saudação tem de 3 a 6 emojis', todas.every((x) => nEmoji(x) >= 3 && nEmoji(x) <= 6),
       todas.filter((x) => nEmoji(x) < 3 || nEmoji(x) > 6)[0]);
     t('  e nenhum emoji serve de separador no meio da frase', todas.every((x) => !separador(x)));
+    t('  e emoji só no fim da linha, nunca seguido de texto', todas.every((x) => x.split('\n').every((l) => !/\p{Extended_Pictographic}\uFE0F? *[\p{L}\p{N}]/u.test(l))));
     t('  e nenhuma linha começa com emoji', todas.every((x) => x.split('\n').every((l) => !/^\p{Extended_Pictographic}/u.test(l))));
     t('  e as saudações têm parágrafo', todas.every((x) => x.includes('\n\n')));
     t('  e não usam sempre os mesmos emojis', new Set(todas.join('').match(/\p{Extended_Pictographic}/gu)).size >= 15);
@@ -1042,6 +1043,8 @@ const CLI = '5541999998888';
       const ruins = amostras.filter((x) => nEmoji(x) < 3 || nEmoji(x) > 6);
       t('post montado (promo, cupom, mais vendidos, notícia, review, avaliação) tem de 3 a 6 emojis',
         amostras.length >= 100 && ruins.length === 0, ruins[0] || String(amostras.length));
+      t('  e nenhum emoji seguido de texto na mesma linha (pós-venda e posts)',
+        [...amostras, ...vp].every((x) => x.split('\n').every((l) => !/\p{Extended_Pictographic}\uFE0F? *[\p{L}\p{N}]/u.test(l.replace(/https?:\/\/\S+/g, '')))));
       t('  sem emoji separador e sem linha começando com emoji',
         amostras.every((x) => !separador(x) && x.split('\n').every((l) => !/^\p{Extended_Pictographic}/u.test(l))));
       nerixE.listCoupons = salvoE.lc; nerixE.listProducts = salvoE.lp; newsE.imageOk = salvoE.io;

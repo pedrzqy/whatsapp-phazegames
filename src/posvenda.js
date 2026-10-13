@@ -65,11 +65,11 @@ function textoDaConferencia(nome) {
     `${primeiro ? `${primeiro}, c` : 'C'}omo foi a ativação do jogo? 🕹️
 
 ` +
-      `Se algo travou no caminho, me conta aqui que eu resolvo com você. 😉 Pode mandar sem medo! 💪`,
+      `Se algo travou no caminho, me conta aqui que eu resolvo com você. 😉\n\nPode mandar sem medo! 💪`,
     `${primeiro ? `${primeiro}, d` : 'D'}eu pra fazer a ativação direitinho? 😊
 
 ` +
-      `Qualquer etapa que travou, me conta aqui que eu resolvo com você. 🙌 Estou por aqui! 💚`,
+      `Qualquer etapa que travou, me conta aqui que eu resolvo com você. 🙌\n\nEstou por aqui! 💚`,
   ];
   return marca.assinar(sortearTexto('conferencia', variantes));
 }
@@ -227,7 +227,7 @@ function textoDeReativacao(nome) {
     `${oi} Tudo bem por aí? 😄
 
 ` +
-      `Tem novidade na loja. 🔥 Se quiser ver, me diz o jogo ou o console que eu busco pra você. 🕹️`,
+      `Tem novidade na loja. 🔥\n\nSe quiser ver, me diz o jogo ou o console que eu busco pra você. 🕹️`,
     `${oi} Passando pra dizer que chegou jogo novo por aqui 🎮
 
 ` +
