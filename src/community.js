@@ -21,9 +21,9 @@ const nerix = require('./nerix');
 const news = require('./news');
 const sender = require('./sender');
 const evolution = require('./evolution');
-const variator = require('./variator');
 const ai = require('./ai');
 const saudacoes = require('./saudacoes');
+const jitter = require('./jitter');
 
 const cfg = config.community;
 const STORE_URL = config.store.url;
@@ -52,8 +52,65 @@ function saveState() {
   } catch (err) { console.error('[community] falha ao salvar estado:', err.message); }
 }
 
+// ─── Variação de texto ───────────────────────────────────────────────
+//
+// Todo trecho fixo de post sai de uma lista e nunca repete o último usado
+// (índice gravado em state.textoUlt, que sobrevive a reinício). Texto idêntico
+// todo dia, no mesmo minuto, é o que o WhatsApp lê como robô.
+const TEXTOS = {
+  bestHead: ['🏆 Os *mais vendidos* da Phaze Games agora:', '🔥 O que tá bombando na Phaze Games:', '🏆 Ranking dos queridinhos da galera:', '⭐ Os jogos mais pedidos da Phaze Games:'],
+  bestFoot: ['Garanta o seu em {url} 🎮', 'Tá tudo em {url} 🎮', 'Dá uma olhada em {url} 👀', 'Confere lá: {url} 🎮'],
+  promoIntro: ['🎮 Destaque do dia na *Phaze Games*', '🔥 Bora jogar?', '🎮 Que tal esse hoje?', '🕹️ Olha esse aqui na *Phaze Games*', '⭐ Sugestão da *Phaze Games*'],
+  promoDePor: ['💰 de ~{de}~ por *{por}*', '💸 Antes ~{de}~, agora *{por}*', '💰 Saindo de ~{de}~ por *{por}*'],
+  promoPreco: ['💰 *{por}*', '💵 Por *{por}*', '💰 Só *{por}*'],
+  promoGarantia: [
+    '✅ 100% original · garantia vitalícia · entrega em até 30 min',
+    '✅ Jogo original, garantia vitalícia e entrega em até 30 minutos',
+    '✅ Original · com garantia vitalícia · chega em até 30 min',
+    '✅ Entrega em até 30 min · 100% original · garantia vitalícia',
+  ],
+  promoCta: ['👉 Garanta o seu: {url}', '🛒 Pega o seu aqui: {url}', '👉 Tá disponível aqui: {url}', '🎮 Confere e garante o seu: {url}'],
+  cupomHead: ['🎟️ Cupom ativo agora:', '🎁 Solta o cupom!', '🎟️ Bora economizar:', '🎟️ Tem cupom rolando:'],
+  cupomCorpo: ['{off} na sua compra em {url}', 'Ganhe {off} na sua compra em {url}', '{off} pra usar em {url}'],
+  cupomFim: ['É só aplicar o código *{code}* no checkout 😉', 'Aplica o código *{code}* no checkout e pronto 😉', 'Digita *{code}* no checkout pra usar 😉'],
+  newsHead: ['📰 Saiu novidade no mundo', '📰 Fresquinho do mundo', '🎮 Rolou no mundo', '🗞️ Notícia nova do mundo'],
+  newsLink: ['👉 {link}', '🔗 Leia mais: {link}', '👉 Veja na íntegra: {link}'],
+  reviewHead: ['⭐ *Avaliação* —', '📝 *Review* nova —', '⭐ Saiu análise —', '🎮 *Análise* fresquinha —'],
+  reviewLoja: ['🛒 Tá na *Phaze Games*: {link}', '🛒 Você acha na *Phaze Games*: {link}', '🎮 Disponível na *Phaze Games*: {link}'],
+  reviewLink: ['👉 Review completa: {link}', '📖 Leia a review completa: {link}', '👉 Análise completa aqui: {link}'],
+  avalPedido: [
+    'Quem já comprou aqui, conta pra gente como foi? 👀',
+    'Fala, pessoal! Quem já pegou jogo com a gente, deixa o feedback aí 👇',
+    'Comprou com a gente e deu tudo certo? Conta aqui pro pessoal 😄',
+    'A opinião de vocês ajuda demais quem tá chegando agora 🙌',
+    'Já jogou algo que pegou com a gente? Conta como foi a experiência 🎮',
+    'Seu feedback faz diferença pra quem ainda tá em dúvida 💬',
+  ],
+  avalLink: ['Deixa sua avaliação aqui: {url}', 'Sua avaliação vai aqui: {url}', 'Avalia a gente por aqui: {url}'],
+  avalGrupo: [
+    'É só responder aqui no grupo — leva 10 segundos e ajuda muita gente 💚',
+    'Basta responder aqui no grupo, leva só 10 segundos e ajuda muita gente 💚',
+    'Responde aqui mesmo no grupo: são 10 segundos e ajuda quem tá chegando 💚',
+  ],
+  avalFim: ['Ainda não comprou? {url}', 'Ainda não conhece a loja? {url}', 'Quer conhecer a loja? {url}'],
+  noiteRodape: [
+    '_O grupo volta a abrir por volta das {h}h._',
+    '_Amanhã, por volta das {h}h, o grupo volta a abrir._',
+    '_Nos vemos de manhã: o grupo volta a abrir perto das {h}h._',
+  ],
+};
+
+/** Sorteia uma variação de TEXTOS[chave] diferente da última, e preenche {campos}. */
+function varia(chave, campos = {}) {
+  state.textoUlt = state.textoUlt || {};
+  const { texto, indice } = jitter.variar(TEXTOS[chave], state.textoUlt[chave]);
+  state.textoUlt[chave] = indice;
+  saveState();
+  return texto.replace(/\{(\w+)\}/g, (_, k) => (campos[k] != null ? campos[k] : ''));
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────
-const brl = (n) => 'R$ ' + Number(n).toFixed(2).replace('.', ',');
+const brl =(n) => 'R$ ' + Number(n).toFixed(2).replace('.', ',');
 
 /** Hora atual no fuso de Brasília (UTC-3). */
 function brt(now) {
@@ -118,9 +175,9 @@ async function genBestSellers() {
   const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
   const linhas = top.map((p, i) => `${medals[i]} ${cleanName(p.name)} — ${brl(lowestPrice(p))}`);
   return (
-    `${variator.pick(['🏆 Os *mais vendidos* da Phaze Games agora:', '🔥 O que tá bombando na Phaze Games:', '🏆 Ranking dos queridinhos da galera:'])}\n\n` +
+    `${varia('bestHead')}\n\n` +
     linhas.join('\n') +
-    `\n\nGaranta o seu em ${STORE_URL} 🎮`
+    `\n\n${varia('bestFoot', { url: STORE_URL })}`
   );
 }
 
@@ -164,14 +221,14 @@ async function genPromo() {
 
     const pr = bestPrice(p);
     const precoLinha = pr.de
-      ? `💰 de ~${brl(pr.de)}~ por *${brl(pr.por)}*`
-      : `💰 *${brl(pr.por)}*`;
+      ? varia('promoDePor', { de: brl(pr.de), por: brl(pr.por) })
+      : varia('promoPreco', { por: brl(pr.por) });
     const text =
-      `${variator.pick(['🎮 Destaque do dia na *Phaze Games*', '🔥 Bora jogar?', '🎮 Que tal esse hoje?'])} — Nintendo Switch\n\n` +
+      `${varia('promoIntro')} — Nintendo Switch\n\n` +
       `*${cleanName(p.name)}*\n` +
       `${precoLinha}\n` +
-      `✅ 100% original · garantia vitalícia · entrega em até 30 min\n\n` +
-      `👉 Garanta o seu: ${productLink(p.slug)}`;
+      `${varia('promoGarantia')}\n\n` +
+      `${varia('promoCta', { url: productLink(p.slug) })}`;
     return { text, image };
   }
   return null;
@@ -188,9 +245,9 @@ async function genCoupon() {
   const c = list[0];
   const off = c.type === 'percentage' ? `${Number(c.value).toFixed(0).replace(/\.0$/, '')}% OFF` : `${brl(c.value)} OFF`;
   return (
-    `${variator.pick(['🎟️ Cupom ativo agora:', '🎁 Solta o cupom!', '🎟️ Bora economizar:'])} *${c.code}*\n\n` +
-    `${off} na sua compra em ${STORE_URL}\n` +
-    `É só aplicar o código *${c.code}* no checkout 😉`
+    `${varia('cupomHead')} *${c.code}*\n\n` +
+    `${varia('cupomCorpo', { off, url: STORE_URL })}\n` +
+    `${varia('cupomFim', { code: c.code })}`
   );
 }
 
@@ -203,9 +260,9 @@ async function genNews() {
     markSeen(n.link);
     const tituloPt = await ai.translate(n.title);
     const text =
-      `${variator.pick(['📰 Saiu novidade no mundo', '📰 Fresquinho do mundo', '🎮 Rolou no mundo'])} ${n.source}!\n\n` +
+      `${varia('newsHead')} ${n.source}!\n\n` +
       `${n.emoji} ${tituloPt}\n\n` +
-      `👉 ${n.link}`;
+      varia('newsLink', { link: n.link });
     return { text, image: n.image };
   }
   return null; // nada com imagem agora
@@ -247,13 +304,13 @@ async function genReviews() {
     markSeen(r.link);
 
     const veredictoPt = veredito ? await ai.translate(veredito) : '';
-    const compra = loja ? `\n🛒 Tá na *Phaze Games*: ${loja.link}` : '';
+    const compra = loja ? `\n${varia('reviewLoja', { link: loja.link })}` : '';
     const text =
-      `⭐ *Avaliação* — ${r.source} ${r.emoji}\n\n` +
+      `${varia('reviewHead')} ${r.source} ${r.emoji}\n\n` +
       `🎮 *${jogo}*${plataforma ? ` — ${plataforma}` : ''}\n` +
       (veredictoPt ? `\n💬 _${veredictoPt}_\n` : '') +
       compra +
-      `\n\n👉 Review completa: ${r.link}`;
+      `\n\n${varia('reviewLink', { link: r.link })}`;
     return { text, image };
   }
   return null; // nada com imagem agora
@@ -275,12 +332,7 @@ async function genReviews() {
  * funcione, não posta — mesma regra dos outros geradores, e pelo mesmo motivo
  * (imagem quebrada no grupo parece loja abandonada).
  */
-const PEDIDOS_AVALIACAO = [
-  'Quem já comprou aqui, conta pra gente como foi? 👀',
-  'Fala, pessoal! Quem já pegou jogo com a gente, deixa o feedback aí 👇',
-  'Comprou com a gente e deu tudo certo? Conta aqui pro pessoal 😄',
-  'A opinião de vocês ajuda demais quem tá chegando agora 🙌',
-];
+// Os pedidos de avaliação moram em TEXTOS.avalPedido (seis variações).
 
 async function genAvaliacao() {
   let image = cfg.avaliacaoImagem || null;
@@ -303,13 +355,13 @@ async function genAvaliacao() {
 
   if (!image) return null; // sem imagem boa, não posta
 
-  const linhas = [variator.pick(PEDIDOS_AVALIACAO), ''];
+  const linhas = [varia('avalPedido'), ''];
   if (cfg.avaliacaoUrl) {
-    linhas.push(`Deixa sua avaliação aqui: ${cfg.avaliacaoUrl}`);
+    linhas.push(varia('avalLink', { url: cfg.avaliacaoUrl }));
   } else {
-    linhas.push('É só responder aqui no grupo — leva 10 segundos e ajuda muita gente 💚');
+    linhas.push(varia('avalGrupo'));
   }
-  linhas.push('', `Ainda não comprou? ${STORE_URL}`);
+  linhas.push('', varia('avalFim', { url: STORE_URL }));
 
   return { text: linhas.join('\n'), image };
 }
@@ -326,6 +378,10 @@ const GENERATORS = {
 
 // ─── Envio ───────────────────────────────────────────────────────────
 async function publish(text, image) {
+  // Carimbo de QUALQUER publicação no grupo (post ou saudação): o espaçamento
+  // mínimo entre posts conta a partir dele.
+  state.ultimoPostGrupo = Date.now();
+  saveState();
   if (cfg.dryRun) {
     console.log(`[community] (DRY-RUN, não enviado)${image ? ` [imagem: ${image}]` : ''} →\n${text}\n`);
     return;
@@ -346,10 +402,58 @@ async function publish(text, image) {
  * Aceita janela que cruza a meia-noite (abre 9, fecha 2), porque a alternativa
  * é alguém configurar isso um dia e descobrir que o grupo nunca mais abriu.
  */
-function deveEstarAberto(hour) {
-  const { abreHora: abre, fechaHora: fecha } = cfg;
-  return abre <= fecha ? hour >= abre && hour < fecha : hour >= abre || hour < fecha;
+function abertoEm(valor, abre, fecha) {
+  return abre <= fecha ? valor >= abre && valor < fecha : valor >= abre || valor < fecha;
 }
+
+/**
+ * Sem `minute`/`dateKey`: conta pelo horário-base (hora cheia), que é o que a
+ * chamada de uma hora só consegue perguntar. Com os dois: usa o horário DO DIA,
+ * o base mais o desvio sorteado (ver horariosDoPortao).
+ */
+function deveEstarAberto(hour, minute, dateKey) {
+  if (minute == null || !dateKey) return abertoEm(hour, cfg.abreHora, cfg.fechaHora);
+  const { abreMin, fechaMin } = horariosDoPortao(dateKey);
+  return abertoEm(hour * 60 + minute, abreMin, fechaMin);
+}
+
+// ─── Horário do dia: base + desvio sorteado e gravado ────────────────
+//
+// Cada item agendado (cada post, abrir, fechar) tem um desvio em minutos por
+// dia. O desvio fica em state.jitter[id][AAAA-MM-DD] e é sorteado UMA vez:
+// reiniciar o bot no meio do dia devolve o mesmo horário, e nunca dá dois
+// envios. O de hoje difere do de ontem em pelo menos COMMUNITY_JITTER_MIN_DIFF
+// minutos (padrão 15), dentro de ±COMMUNITY_JITTER_MIN (padrão 30).
+const limitarMin = (m) => Math.max(0, Math.min(1439, m));
+
+function desvioDe(id, dateKey) {
+  state.jitter = state.jitter || {};
+  state.jitter[id] = state.jitter[id] || {};
+  const jaTinha = Number.isFinite(state.jitter[id][dateKey]);
+  const d = jitter.desvioDoDia(state.jitter[id], dateKey);
+  if (!jaTinha) saveState();
+  return d;
+}
+
+/** Minuto do dia (BRT) em que o grupo abre e fecha neste dia. */
+function horariosDoPortao(dateKey) {
+  return {
+    abreMin: limitarMin(cfg.abreHora * 60 + desvioDe('portao-abre', dateKey)),
+    fechaMin: limitarMin(cfg.fechaHora * 60 + desvioDe('portao-fecha', dateKey)),
+  };
+}
+
+/** Minuto do dia (BRT) em que esta entrada da agenda sai neste dia. */
+function horarioDoPost(item, dateKey) {
+  return limitarMin(item.hour * 60 + desvioDe(`post-${item.key}@${item.hour}`, dateKey));
+}
+
+/** Folga mínima entre dois posts do grupo (qualquer tipo). */
+const ESPACO_MIN_MS = Number(process.env.COMMUNITY_ESPACO_MIN ?? 20) * 60 * 1000;
+/** Quanto tempo depois do horário sorteado o post ainda vale (tick perdido, espaçamento). */
+const TOLERANCIA_POST_MIN = 90;
+
+const hhmm = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
 /**
  * Deixa o portão do grupo no estado que o relógio pede.
@@ -384,14 +488,14 @@ const RECUO_MAX_MS = 4 * 60 * 60 * 1000;
  */
 const MANUAL_MS = 30 * 60 * 1000;
 
-async function ajustarPortao(hour) {
+async function ajustarPortao(hour, minute, dateKey) {
   if (!cfg.portaoLigado) return;
   if (!require('./chaves').ligada('grupo')) return;
 
   // Mexeram na mão agora há pouco: o agendador espera a vez dele.
   if (Date.now() < (state.portaoManualAte || 0)) return;
 
-  const aberto = deveEstarAberto(hour);
+  const aberto = deveEstarAberto(hour, minute, dateKey);
   if (state.grupoAberto === aberto) return; // já está assim: não mexe, não gera aviso
 
   // Falhou há pouco: espera o recuo em vez de tentar a cada volta.
@@ -412,7 +516,7 @@ async function ajustarPortao(hour) {
     state.portaoFalhas = 0;
     state.portaoTentaApos = 0;
     saveState();
-    console.log(`[community] grupo ${aberto ? 'ABERTO' : 'FECHADO'} (${cfg.abreHora}h as ${cfg.fechaHora}h)`);
+    console.log(`[community] grupo ${aberto ? 'ABERTO' : 'FECHADO'} (base ${cfg.abreHora}h as ${cfg.fechaHora}h, com desvio do dia)`);
   } catch (err) {
     // Não propaga: o portão não pode derrubar os anúncios, que são a razão de
     // este agendador existir. O motivo já foi para o log no evolution.js.
@@ -479,7 +583,7 @@ async function saudar(tipo, dateKey) {
   // precisa saber que não está bloqueado, só é tarde.
   const rodape =
     tipo === 'noite' && cfg.portaoLigado
-      ? `\n\n_O grupo volta a abrir às ${cfg.abreHora}h._`
+      ? `\n\n${varia('noiteRodape', { h: cfg.abreHora })}`
       : '';
 
   state.slots[slot] = Date.now();
@@ -522,15 +626,18 @@ async function mexerNoPortao(aberto) {
 
 /** Foto do portão, para o comando do operador. */
 function estadoDoPortao() {
-  const { hour, minute } = brt(Date.now());
+  const { hour, minute, dateKey } = brt(Date.now());
   const manualPor = Math.max(0, (state.portaoManualAte || 0) - Date.now());
+  const { abreMin, fechaMin } = horariosDoPortao(dateKey);
   return {
     ligado: cfg.portaoLigado && Boolean(cfg.groupJid),
     temGrupo: Boolean(cfg.groupJid),
     aberto: state.grupoAberto,
-    deveriaEstarAberto: deveEstarAberto(hour),
+    deveriaEstarAberto: deveEstarAberto(hour, minute, dateKey),
     abreHora: cfg.abreHora,
     fechaHora: cfg.fechaHora,
+    abreHoje: hhmm(abreMin),
+    fechaHoje: hhmm(fechaMin),
     agora: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
     manualPorMin: Math.round(manualPor / 60000),
   };
@@ -539,7 +646,8 @@ function estadoDoPortao() {
 /** Para o #status: o grupo está fechado neste instante? */
 function grupoFechado() {
   if (!cfg.portaoLigado || !cfg.groupJid) return false;
-  return !deveEstarAberto(brt(Date.now()).hour);
+  const { hour, minute, dateKey } = brt(Date.now());
+  return !deveEstarAberto(hour, minute, dateKey);
 }
 
 async function tick() {
@@ -561,7 +669,7 @@ async function tick() {
 
     // ANTES dos anúncios, de propósito: se o horário de abrir chegou, o grupo
     // abre nesta volta e o anúncio das 10h já cai num grupo aberto.
-    await ajustarPortao(hour);
+    await ajustarPortao(hour, minute, dateKey);
 
     // ── As saudações ──────────────────────────────────────
     //
@@ -576,13 +684,17 @@ async function tick() {
     // A janela vai até a hora de abrir, e não só nos cinco minutos: um tick
     // perdido não pode custar a saudação do dia. A trava de slot cuida do resto.
     if (cfg.saudacoesLigadas && require('./chaves').ligada('grupo')) {
-      const minutoDeAbrir = cfg.abreHora * 60;
+      // Abrir e fechar têm horário DO DIA (base + desvio gravado), e as
+      // saudações andam junto com eles.
+      const { abreMin: minutoDeAbrir, fechaMin: minutoDeFechar } = horariosDoPortao(dateKey);
       const agoraEmMinutos = hour * 60 + minute;
       const janelaDoBomDia =
         agoraEmMinutos >= minutoDeAbrir - cfg.antecedenciaBomDiaMin &&
         agoraEmMinutos < minutoDeAbrir + 60;
+      const janelaDaBoaNoite =
+        agoraEmMinutos >= minutoDeFechar && agoraEmMinutos < minutoDeFechar + 60;
 
-      if (hour === cfg.fechaHora) await saudar('noite', dateKey);
+      if (janelaDaBoaNoite) await saudar('noite', dateKey);
       else if (janelaDoBomDia) await saudar('dia', dateKey);
     }
     // Poda slots antigos (mantém o estado enxuto).
@@ -591,13 +703,23 @@ async function tick() {
     }
 
     for (const item of cfg.schedule) {
-      if (hour !== item.hour) continue;             // cada entrada posta no SEU horário
+      // Cada entrada posta no SEU horário DO DIA: base + desvio sorteado (±30 min,
+      // diferente do de ontem). Vale por 90 min, para um tick perdido ou o
+      // espaçamento não custarem o post.
+      const agoraMin = hour * 60 + minute;
+      const quando = horarioDoPost(item, dateKey);
+      if (agoraMin < quando || agoraMin >= quando + TOLERANCIA_POST_MIN) continue;
+      // Grupo fechado pelo horário: não anuncia para ninguém (nem antes de abrir
+      // nem depois de fechar).
+      if (cfg.portaoLigado && !deveEstarAberto(hour, minute, dateKey)) continue;
       const entryId = `${item.key}@${item.hour}`;   // por HORÁRIO → permite 2/dia do mesmo tipo
       const slotKey = `${entryId}-${dateKey}`;      // no máx 1 dessa entrada por dia
       if (state.slots[slotKey]) continue;           // já postou hoje nesse horário
       const last = state.lastPostAt[entryId] || 0;
       const dueMs = (item.everyDays - 0.5) * 24 * 60 * 60 * 1000; // tolerância de meio dia
       if (last && now - last < dueMs) continue;     // ainda não completou a cadência
+      // Espaçamento: nada de dois envios colados no grupo. Fica para o próximo tick.
+      if (now - (state.ultimoPostGrupo || 0) < ESPACO_MIN_MS) break;
 
       const gen = GENERATORS[item.key];
       if (!gen) continue;
@@ -644,7 +766,7 @@ function start() {
   if (!cfg.enabled) { console.log('[community] desligada (COMMUNITY_ENABLED != true)'); return; }
   if (!cfg.groupJid) { console.log('[community] SEM COMMUNITY_GROUP_JID — não vai postar'); return; }
   if (timer) return;
-  const agenda = cfg.schedule.map((s) => `${s.key} a cada ${s.everyDays}d @${s.hour}h`).join(', ') || '(vazia)';
+  const agenda = cfg.schedule.map((s) => `${s.key} a cada ${s.everyDays}d @${s.hour}h(±${jitter.FAIXA}min)`).join(', ') || '(vazia)';
   console.log(
     `[community] ligada — grupo ${cfg.groupJid}${cfg.instance ? ` (instância ${cfg.instance})` : ''}; ` +
     `agenda: ${agenda} (BRT); ${cfg.dryRun ? 'DRY-RUN' : 'AO VIVO'}`
@@ -677,4 +799,4 @@ function stop() { if (timer) { clearInterval(timer); timer = null; } }
 // A peneira das saudações vai exportada para o teste: é ela que decide o que de
 // texto GERADO chega num grupo de centenas de pessoas sem ninguém ler antes.
 // Sem alcançá-la, o teste dublaria justamente o que deveria estar medindo.
-module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, saudacaoAprovada, saudar, mexerNoPortao, estadoDoPortao, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
+module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, horariosDoPortao, horarioDoPost, TEXTOS, varia, _estado: () => state, saudacaoAprovada, saudar, mexerNoPortao, estadoDoPortao, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };

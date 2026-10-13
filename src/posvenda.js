@@ -26,6 +26,7 @@ const vendas = require('./vendas');
 const recovery = require('./recovery');
 const marca = require('./ponte/marca');
 const chaves = require('./chaves');
+const jitter = require('./jitter');
 
 const HORA = 3600_000;
 const DIA = 24 * HORA;
@@ -56,10 +57,29 @@ const VALIDADE_MS = 3 * DIA;
  */
 function textoDaConferencia(nome) {
   const primeiro = vendas.primeiroNome(nome);
-  return marca.assinar(
-    `${primeiro ? `${primeiro}, t` : 'T'}udo certo com a ativação? 🎮\n\n` +
+  const variantes = [
+    `${primeiro ? `${primeiro}, t` : 'T'}udo certo com a ativação? 🎮
+
+` +
       `Se travou em alguma etapa, me conta aqui que eu resolvo com você.`,
-  );
+    `${primeiro ? `${primeiro}, c` : 'C'}omo foi a ativação do jogo? 🎮
+
+` +
+      `Se algo travou no caminho, me conta aqui que eu resolvo com você.`,
+    `${primeiro ? `${primeiro}, d` : 'D'}eu pra fazer a ativação direitinho? 😊
+
+` +
+      `Qualquer etapa que travou, me conta aqui que eu resolvo com você.`,
+  ];
+  return marca.assinar(sortearTexto('conferencia', variantes));
+}
+
+/** Última variação usada por tipo, em memória: só evita repetir em sequência. */
+const ultimoTexto = {};
+function sortearTexto(chave, variantes) {
+  const { texto, indice } = jitter.variar(variantes, ultimoTexto[chave]);
+  ultimoTexto[chave] = indice;
+  return texto;
 }
 
 /**
@@ -197,11 +217,22 @@ async function reativar(agora = Date.now()) {
  */
 function textoDeReativacao(nome) {
   const primeiro = vendas.primeiroNome(nome);
-  return marca.assinar(
-    `${primeiro ? `Oi, ${primeiro}!` : 'Oi!'} Faz um tempo 😄\n\n` +
+  const oi = primeiro ? `Oi, ${primeiro}!` : 'Oi!';
+  return marca.assinar(sortearTexto('reativacao', [
+    `${oi} Faz um tempo 😄
+
+` +
       `Chegou bastante coisa nova por aqui. Se quiser ver o que tem, é só me dizer ` +
       `o jogo ou o console que eu procuro pra você.`,
-  );
+    `${oi} Tudo bem por aí? 😄
+
+` +
+      `Tem novidade na loja. Se quiser ver, me diz o jogo ou o console que eu busco pra você.`,
+    `${oi} Passando pra dizer que chegou jogo novo por aqui 🎮
+
+` +
+      `Se quiser dar uma olhada, é só me falar o jogo ou o console que eu procuro pra você.`,
+  ]));
 }
 
 // ============================================================

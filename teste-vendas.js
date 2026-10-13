@@ -948,20 +948,25 @@ const CLI = '5541999998888';
     // Quando sai.
     vendas.definirGrupoVendas(GRUPO);
     enviadas = [];
-    t('antes da hora não sai', (await resumo.tick(as('22:30'))) === false && enviadas.length === 0);
-    t('na hora, sai', (await resumo.tick(as('23:05'))) === true);
+    // O minuto do envio muda todo dia (base 23h +-30 min, gravado): o teste lê
+    // o horario do dia em vez de supor 23:05.
+    const quandoR = resumo.horarioDoDia(hoje());
+    const noMinuto = (m) => as('00:00') + m * 60000;
+    t('o horário do dia fica entre 22:30 e 23:30', quandoR >= 22 * 60 + 30 && quandoR <= 23 * 60 + 30, String(quandoR));
+    t('antes da hora não sai', (await resumo.tick(as('22:00'))) === false && (await resumo.tick(noMinuto(quandoR - 1))) === false && enviadas.length === 0);
+    t('na hora, sai', (await resumo.tick(noMinuto(quandoR))) === true);
     const env = enviadas.filter((e) => e.para === GRUPO && /Resumo do dia/.test(e.texto));
     t('  vai para o grupo da equipe', env.length === 1);
     t('  traz membros, vendas e rodapé', /\*\+8\*/.test(env[0]?.texto) && /Vendas: \*/.test(env[0]?.texto) && /Bom descanso/.test(env[0]?.texto));
-    t('  segunda volta no mesmo dia não repete', (await resumo.tick(as('23:40'))) === false && enviadas.length === 1);
+    t('  segunda volta no mesmo dia não repete', (await resumo.tick(as('23:58'))) === false && enviadas.length === 1);
     resumo._recarregar(); // "reinício": o estado vem do disco
-    t('  nem depois de reiniciar', (await resumo.tick(as('23:50'))) === false && enviadas.length === 1);
+    t('  nem depois de reiniciar', (await resumo.tick(as('23:59'))) === false && enviadas.length === 1);
     t('  e o retrato de hoje virou a base de amanhã', resumo._estado().retrato.n === 100);
 
     // Sem grupo da equipe: cai no privado do operador. Dia seguinte.
     vendas.definirGrupoVendas('off');
     enviadas = [];
-    const amanha = as('23:10') + 24 * 3600 * 1000;
+    const amanha = as('23:59') + 24 * 3600 * 1000;
     t('no dia seguinte sai de novo', (await resumo.tick(amanha)) === true);
     t('  sem grupo, vai ao privado do operador', enviadas.some((e) => e.para === OP && /Resumo do dia/.test(e.texto)));
 
@@ -1025,6 +1030,165 @@ const CLI = '5541999998888';
     await comunidade.saudar('noite', '2030-01-01');
     t('boa noite sai com o aviso de que o grupo volta',
       /boa noite/i.test(enviadas[0]?.texto || '') && /volta a abrir/.test(enviadas[0]?.texto || ''));
+  }
+
+  // ── Horário variado e texto variado (anti-restrição) ──────────
+  //
+  // O número foi restringido no pico: anúncios no mesmo minuto, todo dia, com
+  // o mesmo texto. Cada item agendado agora sai no base + desvio do dia (gravado),
+  // e nenhum trecho fixo repete o último.
+  bloco('horario variado, texto variado, sem envio duplo');
+  {
+    const jit = require('./src/jitter');
+    const fsx = require('fs');
+    const pathx = require('path');
+    const diaN = (n) => new Date(Date.UTC(2031, 0, 1) + n * 86400000).toISOString().slice(0, 10);
+
+    // O sorteio em si: 400 dias seguidos, sempre >= 15 min de diferença e dentro de +-30.
+    const mapa = {};
+    let okDiff = true; let okFaixa = true; let ant = null; const vistos = new Set();
+    for (let n = 0; n < 400; n++) {
+      const d = jit.desvioDoDia(mapa, diaN(n));
+      if (ant != null && Math.abs(d - ant) < 15) okDiff = false;
+      if (Math.abs(d) > 30) okFaixa = false;
+      vistos.add(d); ant = d;
+    }
+    t('desvio de dias seguidos difere em pelo menos 15 min (400 dias)', okDiff);
+    t('  e fica dentro de +-30 min', okFaixa);
+    t('  e varia de verdade (muitos valores distintos)', vistos.size > 20, String(vistos.size));
+    t('  chamar de novo no mesmo dia devolve o mesmo (sem re-sortear)', jit.desvioDoDia(mapa, diaN(399)) === ant);
+    t('  o mapa guarda só os últimos dias', Object.keys(mapa).length <= 10);
+
+    // Resumo da equipe: horário do dia gravado em resumo.json.
+    const resumoJ = require('./src/resumo');
+    const horas = [];
+    for (let n = 0; n < 40; n++) horas.push(resumoJ.horarioDoDia(diaN(n)));
+    t('resumo: dias seguidos diferem >= 15 min', horas.every((h, i) => i === 0 || Math.abs(h - horas[i - 1]) >= 15), horas.slice(0, 6).join(','));
+    t('  e nunca antes de 22:30 nem depois de 23:30', horas.every((h) => h >= 22 * 60 + 30 && h <= 23 * 60 + 30));
+    const noDisco = JSON.parse(fsx.readFileSync(pathx.join(process.env.PONTE_DATA_DIR, 'resumo.json'), 'utf8'));
+    t('  gravado no disco', noDisco.jitter && noDisco.jitter[diaN(39)] != null);
+    const antesR = resumoJ.horarioDoDia(diaN(39));
+    resumoJ._recarregar();
+    t('  reinício não re-sorteia', resumoJ.horarioDoDia(diaN(39)) === antesR);
+    t('  resumo tem 3+ despedidas e 3+ títulos', resumoJ.DESPEDIDAS.length >= 3 && resumoJ.TITULOS.length >= 3);
+
+    // Comunidade: posts e portão.
+    let com = require('./src/community');
+    const cfgJ = require('./src/config').community;
+    const T = com.TEXTOS;
+    t('todo trecho fixo tem 3+ variações', Object.entries(T).every(([, l]) => l.length >= 3),
+      Object.entries(T).filter(([, l]) => l.length < 3).map(([k]) => k).join(','));
+    const politica = require('./src/ponte/politica');
+    t('  e nenhuma usa vocabulário proibido', Object.values(T).flat().every((x) => !politica.vocabularioProibido().test(x)));
+    let repetiuTexto = false;
+    for (const k of Object.keys(T)) {
+      let ultimo = null;
+      const usados = new Set();
+      for (let i = 0; i < 120; i++) {
+        const txt = com.varia(k, { url: 'u', de: 'a', por: 'b', off: 'c', code: 'd', link: 'l', h: 9 });
+        if (txt === ultimo) repetiuTexto = true;
+        usados.add(txt); ultimo = txt;
+      }
+      if (usados.size < 3) repetiuTexto = true;
+    }
+    t('a variação nunca repete a última e usa 3+ textos', !repetiuTexto);
+    t('  o índice da última fica gravado', com._estado().textoUlt && Object.keys(com._estado().textoUlt).length === Object.keys(T).length);
+
+    const horasP = []; const abre = []; const fecha = [];
+    const itemP = { key: 'promo', hour: 13 };
+    for (let n = 0; n < 60; n++) {
+      horasP.push(com.horarioDoPost(itemP, diaN(n)));
+      const h = com.horariosDoPortao(diaN(n)); abre.push(h.abreMin); fecha.push(h.fechaMin);
+    }
+    const difOk = (a) => a.every((x, i) => i === 0 || Math.abs(x - a[i - 1]) >= 15);
+    t('post: dias seguidos diferem >= 15 min', difOk(horasP), horasP.slice(0, 6).join(','));
+    t('  abrir e fechar também', difOk(abre) && difOk(fecha));
+    t('  post de 13h fica entre 12:30 e 13:30', horasP.every((h) => h >= 12 * 60 + 30 && h <= 13 * 60 + 30));
+    t('  abrir não sai antes de 8:30 nem fecha depois de 23:30',
+      abre.every((h) => h >= 8 * 60 + 30 && h <= 9 * 60 + 30) && fecha.every((h) => h >= 22 * 60 + 30 && h <= 23 * 60 + 30));
+
+    // Reinício: recarrega o módulo (o estado vem do community.json).
+    const antesRe = com.horarioDoPost(itemP, diaN(59));
+    delete require.cache[require.resolve('./src/community')];
+    com = require('./src/community');
+    t('reinício não re-sorteia o horário do post', com.horarioDoPost(itemP, diaN(59)) === antesRe);
+    t('  nem o do portão', com.horariosDoPortao(diaN(59)).abreMin === abre[59]);
+
+    // tick de ponta a ponta: sem envio antes da hora, um só na hora, nenhum depois do reinício.
+    const nerixJ = require('./src/nerix');
+    const chavesJ = require('./src/chaves');
+    nerixJ.listCoupons = async () => ({ data: [{ code: 'PHAZE10', is_active: true, is_secret: false, type: 'percentage', value: 10 }] });
+    nerixJ.listProducts = async () => ({ data: [{ name: 'Zelda', price: 100, sales_count: 9, slug: 'zelda' }] });
+    const salvoJ = {
+      enabled: cfgJ.enabled, dry: cfgJ.dryRun, jid: cfgJ.groupJid, port: cfgJ.portaoLigado,
+      saud: cfgJ.saudacoesLigadas, sched: cfgJ.schedule, now: Date.now,
+    };
+    cfgJ.enabled = true; cfgJ.dryRun = false; cfgJ.groupJid = '120363000000000077@g.us';
+    cfgJ.portaoLigado = false; cfgJ.saudacoesLigadas = false;
+    cfgJ.schedule = [{ key: 'coupon', everyDays: 1, hour: 17 }, { key: 'bestsellers', everyDays: 1, hour: 17 }];
+    const dia = '2031-03-10';
+    const st = com._estado();
+    st.jitter = st.jitter || {};
+    st.jitter['post-coupon@17'] = { [dia]: 0 };       // 17:00
+    st.jitter['post-bestsellers@17'] = { [dia]: 5 };  // 17:05
+    st.slots = {}; st.lastPostAt = {}; st.ultimoPostGrupo = 0;
+    const naHora = (hhmm) => Date.parse(`${dia}T${hhmm}:00-03:00`);
+    enviadas = [];
+    Date.now = () => naHora('16:55');
+    await com.tick();
+    t('tick antes do horário: nada sai', enviadas.length === 0);
+    Date.now = () => naHora('17:02');
+    await com.tick();
+    t('no horário: sai o cupom, uma vez', enviadas.length === 1 && /PHAZE10/.test(enviadas[0].texto), String(enviadas.length));
+    Date.now = () => naHora('17:07');
+    await com.tick();
+    t('espaçamento: o segundo post (já no horário) espera 20 min', enviadas.length === 1, String(enviadas.length));
+    delete require.cache[require.resolve('./src/community')];
+    com = require('./src/community');             // reinício do bot
+    Date.now = () => naHora('17:12');
+    await com.tick();
+    t('depois do reinício: o cupom não sai de novo e o espaçamento continua', enviadas.length === 1, String(enviadas.length));
+    Date.now = () => naHora('17:30');
+    await com.tick();
+    t('passados 20 min, sai o outro post', enviadas.length === 2 && /mais vendidos|bombando|queridinhos|mais pedidos/i.test(enviadas[1].texto), enviadas[1]?.texto?.slice(0, 40));
+    Date.now = () => naHora('17:50');
+    await com.tick();
+    t('e depois disso nada se repete no dia', enviadas.length === 2);
+    t('  o espaçamento entre os dois foi de 20+ min',
+      (() => { const e = com._estado(); return e.lastPostAt['bestsellers@17'] - e.lastPostAt['coupon@17'] >= 20 * 60000; })());
+
+    // Tick depois de fechar: não anuncia.
+    cfgJ.portaoLigado = true;
+    cfgJ.schedule = [{ key: 'coupon', everyDays: 1, hour: 23 }];
+    const st2 = com._estado();
+    st2.jitter['post-coupon@23'] = { [dia]: 29 };   // 23:29
+    st2.jitter['portao-fecha'] = { [dia]: -30 };    // fecha 22:30
+    st2.jitter['portao-abre'] = { [dia]: 0 };
+    st2.slots = {}; st2.lastPostAt = {}; st2.ultimoPostGrupo = 0; st2.grupoAberto = false; st2.portaoManualAte = 0;
+    const evoJ = require('./src/evolution');
+    const portaoSalvo = evoJ.portaoDoGrupo; evoJ.portaoDoGrupo = async () => ({});
+    const ligadaSalva = chavesJ.ligada; chavesJ.ligada = () => true;
+    enviadas = [];
+    Date.now = () => naHora('23:35');
+    await com.tick();
+    t('grupo fechado pelo horário: não anuncia', enviadas.length === 0, String(enviadas.length));
+    chavesJ.ligada = ligadaSalva; evoJ.portaoDoGrupo = portaoSalvo;
+
+    Date.now = salvoJ.now;
+    cfgJ.enabled = salvoJ.enabled; cfgJ.dryRun = salvoJ.dry; cfgJ.groupJid = salvoJ.jid;
+    cfgJ.portaoLigado = salvoJ.port; cfgJ.saudacoesLigadas = salvoJ.saud; cfgJ.schedule = salvoJ.sched;
+
+    // Posvenda: variações sem repetir em sequência.
+    const pv = require('./src/posvenda');
+    const confs = new Set(); const reats = new Set(); let seqIgual = false;
+    let uc = null; let ur = null;
+    for (let i = 0; i < 60; i++) {
+      const c = pv.textoDaConferencia('Ana Silva'); const r = pv.textoDeReativacao('Ana Silva');
+      if (c === uc || r === ur) seqIgual = true;
+      confs.add(c); reats.add(r); uc = c; ur = r;
+    }
+    t('posvenda: 3 variações de conferência e de reativação, sem repetir em sequência',
+      confs.size >= 3 && reats.size >= 3 && !seqIgual, `${confs.size}/${reats.size}`);
   }
 
   console.log('\n' + (falhas ? falhas + ' FALHA(S)' : 'todos os testes passaram'));

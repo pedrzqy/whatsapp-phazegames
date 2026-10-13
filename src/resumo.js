@@ -15,12 +15,16 @@
  *  - CÓDIGOS ENTREGUES: casos-ponte.jsonl, eventos 'encerrado' com motivo
  *    'codigo_entregue' no dia. Só leitura.
  *
- * Sai uma vez por dia, a partir de RESUMO_HORA (BRT, padrão 23), e o dia
- * enviado fica gravado: restart no meio da noite não duplica.
+ * Sai uma vez por dia, perto de RESUMO_HORA (BRT, padrão 23). O minuto exato
+ * muda todo dia: hora-base + desvio de até RESUMO_JITTER_MIN (padrão 30) minutos,
+ * gravado em resumo.json e diferente do de ontem em pelo menos 15 min. O dia
+ * enviado fica gravado: restart no meio da noite não duplica nem re-sorteia.
  */
 
 const fs = require('fs');
 const path = require('path');
+
+const jitter = require('./jitter');
 
 const DATA_DIR = process.env.PONTE_DATA_DIR || path.join(__dirname, '..', 'data');
 const FILE = path.join(DATA_DIR, 'resumo.json');
@@ -47,7 +51,30 @@ const horaEnvio = () => {
 /** Dia (AAAA-MM-DD) e hora em Brasília de um instante. */
 function brt(ms) {
   const d = new Date(ms - 3 * 3600 * 1000);
-  return { dia: d.toISOString().slice(0, 10), hora: d.getUTCHours() };
+  return { dia: d.toISOString().slice(0, 10), hora: d.getUTCHours(), minuto: d.getUTCHours() * 60 + d.getUTCMinutes() };
+}
+
+/** Minuto do dia (BRT) em que o resumo deste dia sai: base + desvio gravado. */
+function horarioDoDia(dia) {
+  estado.jitter = estado.jitter || {};
+  const jaTinha = Number.isFinite(estado.jitter[dia]);
+  const faixa = Number(process.env.RESUMO_JITTER_MIN ?? jitter.FAIXA);
+  const desvio = jitter.desvioDoDia(estado.jitter, dia, { faixa });
+  if (!jaTinha) salvar();
+  // Nunca vira o dia: o resumo é "do dia" e a trava de envio é por data.
+  return Math.max(0, Math.min(1439, horaEnvio() * 60 + desvio));
+}
+
+const TITULOS = ['📊', '📈', '🧾'];
+const DESPEDIDAS = ['Bom descanso, equipe! 💚', 'Bom descanso, time! 💚', 'Fim de expediente. Bom descanso, equipe! 💚'];
+
+/** Variação que não repete a última (índice gravado no estado). */
+function variar(chave, lista) {
+  estado.textoUlt = estado.textoUlt || {};
+  const { texto, indice } = jitter.variar(lista, estado.textoUlt[chave]);
+  estado.textoUlt[chave] = indice;
+  salvar();
+  return texto;
 }
 
 const brl = (n) => 'R$ ' + Number(n).toFixed(2).replace('.', ',');
@@ -99,7 +126,7 @@ async function montar({ agora = Date.now(), parcial = false } = {}) {
 
   const [, mes, d] = dia.split('-');
   const linhas = [
-    `📊 *${parcial ? 'Resumo parcial' : 'Resumo do dia'}* — ${d}/${mes}`,
+    `${parcial ? '📊' : variar('titulo', TITULOS)} *${parcial ? 'Resumo parcial' : 'Resumo do dia'}* — ${d}/${mes}`,
     '',
     `💰 Vendas: *${v.qtd}* (${brl(v.total)})`,
   ];
@@ -116,7 +143,7 @@ async function montar({ agora = Date.now(), parcial = false } = {}) {
 
   if (codigos != null) linhas.push(`🔑 Códigos entregues: *${codigos}*`);
 
-  if (!parcial) linhas.push('', 'Bom descanso, equipe! 💚');
+  if (!parcial) linhas.push('', variar('despedida', DESPEDIDAS));
   return { texto: linhas.join('\n'), membros: n };
 }
 
@@ -131,15 +158,16 @@ async function parcial() {
  */
 async function tick(agora = Date.now()) {
   if (!ligado()) return false;
-  const { dia, hora } = brt(agora);
+  const { dia, minuto } = brt(agora);
+  const quando = horarioDoDia(dia);
 
   // Primeiro retrato, para a primeira noite já ter com o que comparar.
-  if (!estado.retrato && hora < horaEnvio()) {
+  if (!estado.retrato && minuto < quando) {
     const n = await membrosAgora();
     if (n != null) { estado.retrato = { n, em: agora }; salvar(); }
   }
 
-  if (hora < horaEnvio() || estado.ultimoEnvio === dia) return false;
+  if (minuto < quando || estado.ultimoEnvio === dia) return false;
 
   // Marca ANTES de enviar: melhor perder um resumo que mandar dois.
   estado.ultimoEnvio = dia;
@@ -162,8 +190,8 @@ function iniciar({ intervaloMs = 5 * 60 * 1000 } = {}) {
   if (timer || !ligado()) return;
   timer = setInterval(() => tick().catch((err) => console.error('[resumo]', err.message)), intervaloMs);
   timer.unref();
-  console.log(`[resumo] resumo diário ligado (${horaEnvio()}h BRT)`);
+  console.log(`[resumo] resumo diário ligado (${horaEnvio()}h BRT, ±${process.env.RESUMO_JITTER_MIN ?? jitter.FAIXA} min)`);
 }
 function parar() { if (timer) clearInterval(timer); timer = null; }
 
-module.exports = { iniciar, parar, tick, parcial, montar, _estado: () => estado, _recarregar: carregar };
+module.exports = { iniciar, parar, tick, parcial, montar, horarioDoDia, DESPEDIDAS, TITULOS, _estado: () => estado, _recarregar: carregar };
