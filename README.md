@@ -62,6 +62,30 @@ Nerix), e **não há** ferramenta que liste pedidos de terceiros — a chave da 
 admin, então evitamos qualquer vazamento de dados de outros clientes. Chaves/licenças
 só são reveladas após essa validação.
 
+## Código pelo site (phaze-codigo)
+
+O cliente também pode pedir o código no site, sem WhatsApp:
+
+```
+site phaze-codigo -> Estoque /codigo/* -> bot /web/*  (src/ponte/web.js)
+```
+
+| Rota | O que faz |
+| --- | --- |
+| `GET /web/estado` | sistema ligado, congelado, janela e quantos na fila |
+| `POST /web/codigo` | `{ login, nome, imagemBase64, mimetype }` coloca o pedido na fila e devolve o id `web:...` |
+| `GET /web/codigo/:id` | situação do pedido (fila, código, mensagens) |
+
+- Só o Estoque chama, com o header `x-painel-chave` igual à `PAINEL_BOT_CHAVE` do bot.
+- O pedido do site entra na **mesma fila** do WhatsApp, como contato `web:...`. Braço,
+  `#ok`, `#enviar`, `#editar`, expiração e congelamento valem igual.
+- O que o bot "mandaria" para esse contato não vai ao WhatsApp: fica guardado e o site
+  mostra (o `sender.js` desvia todo destino que começa com `web:`).
+- Para responder um cliente do site use `#enviar` ou `#editar` na aprovação. Conta e
+  senha (pacote) não têm como chegar ao site: o cliente vê "nossa equipe está conferindo".
+- `#admin 4` (códigos) desligado deixa o site em manutenção. No copiloto (`#admin 5`) os
+  pedidos do site esperam o `#ok` como os do WhatsApp.
+
 ## Segurança anti-ban
 
 **Toda** mensagem do bot passa por `src/sender.js`, que simula comportamento humano:
