@@ -933,6 +933,13 @@ const VARIANTES_CODIGO = [
 
 /** Entrega o código ao cliente, encerra a vez e chama o próximo. */
 async function entregarCodigo(atendimento, cod) {
+  // O site mostra o código numa caixa própria, com botão de copiar, e precisa
+  // dele separado do texto. Só para o site: o do WhatsApp não fica guardado.
+  if (String(atendimento.from).startsWith('web:')) {
+    atendimento.codigo = cod;
+    persistAgora();
+  }
+
   // Assinada: é a mensagem que o cliente guarda e printa, o momento de maior
   // valor percebido do atendimento inteiro.
   // `rapido`: o cliente está olhando a tela, a espera de "digitando" é curta.

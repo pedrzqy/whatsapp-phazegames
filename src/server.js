@@ -24,6 +24,9 @@ app.get('/', (_req, res) => res.json({ ok: true, service: 'whatsbot' }));
 // Rotas consumidas pelo braço Python que opera o app da Taobao.
 app.use('/ponte/braco', bracoRouter);
 
+// Pedido de código pelo site (phaze-codigo), via painel de estoque.
+app.use('/web', require('./ponte/web').router);
+
 /**
  * Webhook da Evolution API — mensagens recebidas do WhatsApp.
  * Configure na Evolution para POSTar aqui o evento MESSAGES_UPSERT.

@@ -66,7 +66,8 @@ function reservar(from, digitando) {
  */
 async function enviar(from, texto, opts = {}) {
   const { rapido, ...resto } = opts;
-  if (!cfg.humaniza) return sender.send(from, texto, resto);
+  // Cliente do site não vê "digitando", e a espera só atrasaria a fila.
+  if (!cfg.humaniza || String(from || '').startsWith('web:')) return sender.send(from, texto, resto);
 
   const digitando = tempoDigitando(texto, rapido);
   const envioEm = reservar(from, digitando);

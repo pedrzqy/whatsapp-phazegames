@@ -70,6 +70,11 @@ function typingDurationMs(text) {
  */
 function send(number, text, opts = {}) {
   const normalizado = normalizeWhatsApp(text);
+  // Cliente do SITE (`web:...`): não existe WhatsApp do outro lado. A mensagem
+  // vai para a caixa que o site lê (ponte/web.js). Fica aqui, na porta, para
+  // todo caminho que fala com o cliente (código, expirou, #enviar, #ok,
+  // #limpar) valer para o site sem cada um precisar saber que ele existe.
+  if (String(number || '').startsWith('web:')) return require('./ponte/web').guardar(number, normalizado);
   // Registra ANTES de enfileirar: o webhook do próprio envio pode voltar antes
   // de a promessa resolver, e aí o bot leria a própria mensagem como se fosse
   // o operador digitando.

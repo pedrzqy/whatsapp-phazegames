@@ -26,6 +26,10 @@ process.env.NERIX_API_KEY = 'teste';
 process.env.PONTE_OPERADOR_NUMERO = '5541999999999';
 process.env.PONTE_HUMANIZA = 'false';
 process.env.PONTE_BRACO_KEY = 'teste';
+// Fixa a ponte ligada. Sem isto o bloco "pausa nao vaza" dependia do .env da
+// maquina: numa maquina sem .env a ponte nascia desligada, o operador nao era
+// avisado e a suite ficava vermelha sem nada ter quebrado.
+process.env.PONTE_ATIVA = 'true';
 process.env.PONTE_DATA_DIR = require('path').join(require('os').tmpdir(), 'phaze-teste-tools');
 // O agendador do grupo precisa de um grupo para agir, e de nao estar em
 // dry-run: sem isto ele devolve "nao ha grupo configurado" e o teste mede a

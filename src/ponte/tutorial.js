@@ -87,6 +87,9 @@ async function enviar(atendimento) {
 /** Agenda o envio sem esperar. Devolve a promessa (testes) ou null se não envia. */
 function agendar(atendimento) {
   if (!cfg.tutorialVideo || !atendimento?.from) return null;
+  // O site já mostra o link do vídeo junto do código, e o pedido de avaliação
+  // ("me pede aqui que eu te adiciono") não tem como ser respondido lá.
+  if (String(atendimento.from).startsWith('web:')) return null;
   if (atendimento.tutorialEnviado || jaEnviado.has(atendimento.id)) return null;
   atendimento.tutorialEnviado = true;
   jaEnviado.add(atendimento.id);
