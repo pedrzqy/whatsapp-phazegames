@@ -1192,8 +1192,32 @@ function recuperarTravadas() {
   if (mudou) persistAgora();
 }
 
+/**
+ * Descarta o que sobrou de atendimento que já terminou.
+ *
+ * O concluir() da fila encerra o atendimento mas não sabe das tarefas. Com o
+ * braço parado além do prazo, o cliente expirava com o pedido ainda
+ * 'pendente'; o braço voltava, pegava o login e a foto dele, e o código que
+ * chegava ia para quem estava na vez. Passava até por cima do copiloto, porque
+ * a tarefa já tinha sido aprovada ou nem precisava.
+ */
+function descartarOrfas() {
+  let mudou = false;
+  for (const t of dados.tarefas) {
+    if (t.estado !== 'pendente' && t.estado !== 'aguardando_aprovacao') continue;
+    const at = fila.porId(t.atendimentoId);
+    if (at && at.estado !== 'concluido' && at.estado !== 'expirado') continue;
+    t.estado = 'falhou';
+    t.ultimoErro = 'atendimento encerrado';
+    mudou = true;
+    console.warn(`[ponte] tarefa ${t.id} descartada: o atendimento dela já terminou`);
+  }
+  if (mudou) persistAgora();
+}
+
 function proximaTarefa() {
   recuperarTravadas();
+  descartarOrfas();
 
   const agora = Date.now();
   const t = dados.tarefas.find((x) => x.estado === 'pendente' && x.agendadaPara <= agora);

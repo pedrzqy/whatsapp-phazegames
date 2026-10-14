@@ -1031,6 +1031,28 @@ const OP = '5541999999999';
       t('#liberar destrava na hora', limitesMod.disjuntor().estado === 'fechado' && /Liberado/.test(lib), lib);
       t('e zera a espera de tentativas', limitesMod.disjuntor().sondas === 0);
 
+      // 10b) Atendimento que terminou não deixa tarefa para trás. O braço parado
+      // além do prazo fazia o cliente A expirar com o pedido ainda 'pendente';
+      // o braço voltava, pegava o login e a foto de A, e o código que chegava
+      // ia para B, que estava na vez. Passava até por cima do copiloto.
+      zerar();
+      const aExp = await cliente('0101');
+      aExp.usuario = 'expira0101';
+      const tExp = novaTarefa(aExp, 0, 'pendente');
+      const tExpAprov = novaTarefa(aExp, 0, 'aguardando_aprovacao');
+      const aVez = await cliente('0102');
+      aVez.usuario = 'davez0102';
+      await filaMod.concluir(aExp.id, 'expirado');
+      t('quem estava esperando assumiu a vez', filaMod.ativo() && filaMod.ativo().id === aVez.id);
+      const proxExp = ponteMod.proximaTarefa();
+      t('o braço NÃO recebe a tarefa de quem já expirou', !proxExp || proxExp.usuario !== 'expira0101',
+        JSON.stringify(proxExp));
+      t('a tarefa do expirado fica descartada, não pendente', tExp.estado === 'falhou' && tExpAprov.estado === 'falhou',
+        tExp.estado + '/' + tExpAprov.estado);
+      const tVez = novaTarefa(aVez, 0, 'pendente');
+      const proxVez = ponteMod.proximaTarefa();
+      t('a tarefa de quem está na vez continua saindo', proxVez && proxVez.id === tVez.id, JSON.stringify(proxVez));
+
       // 11) Cota por hora do braço NÃO é falha: adia, sem congelar e sem encher o WhatsApp.
       zerar();
       const a3 = await cliente('0003');
