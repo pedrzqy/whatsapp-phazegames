@@ -31,6 +31,7 @@ const midia = require('./midia');
 const codigo = require('./codigo');
 const { dados, persist, persistAgora } = require('./estado');
 const sender = require('../sender');
+const politica = require('./politica');
 const painelEstoque = require('../painel-estoque');
 
 const PREFIXO = 'web:';
@@ -87,9 +88,19 @@ function paraSite(texto) {
  * Resolve na hora: no site não existe "digitando", e segurar aqui só atrasaria
  * a fila de quem chama.
  */
+const NEUTRO = 'Nossa equipe está conferindo o seu pedido. Deixe esta página aberta: a resposta aparece aqui.';
+
 function guardar(id, texto) {
   const r = registro(id, true);
-  const limpo = paraSite(texto);
+  let limpo = paraSite(texto);
+  // Última porta do site. Os textos prontos são testados e o #editar filtra,
+  // mas uma frase nova sem teste ou um texto do outro lado mal traduzido
+  // entregaria a origem na tela do cliente. Aqui a mensagem inteira é trocada:
+  // cortar só a palavra deixaria a frase dizendo o resto.
+  if (limpo && (politica.vocabularioProibido().test(limpo) || politica.temCJK(limpo))) {
+    console.warn(`[web] mensagem barrada antes do site: ${limpo.slice(0, 60)}`);
+    limpo = NEUTRO;
+  }
   if (limpo) {
     r.mensagens.push({ texto: limpo, em: Date.now() });
     if (r.mensagens.length > 30) r.mensagens = r.mensagens.slice(-30);
@@ -154,7 +165,7 @@ function situacao(id) {
     return {
       ...base,
       estado: 'concluido',
-      mensagens: [...base.mensagens, { texto: 'Nossa equipe está conferindo o seu pedido. Deixe esta página aberta: a resposta aparece aqui.', em: Date.now() }],
+      mensagens: [...base.mensagens, { texto: NEUTRO, em: Date.now() }],
     };
   }
   return { ...base, estado: 'concluido' };

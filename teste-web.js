@@ -188,6 +188,15 @@ const PROIBIDAS = /fornecedor|taobao|\bbot\b|rob[oô]|autom[aá]tic|script|—|#
   const soMandar = web.paraSite('Não perdeu nada: é só mandar *#inicio* aqui que eu te coloco na fila de novo');
   t('"é só mandar #inicio" vira "é só tocar em"', soMandar === 'Não perdeu nada: é só tocar em *Pedir outro código* que eu te coloco na fila de novo', soMandar);
   t('travessão some', !web.paraSite('Pronto — chegou').includes('—'));
+  // Última porta: um texto que escapasse com palavra da origem (um #editar
+  // descuidado, uma frase nova sem teste) não pode chegar à tela do cliente.
+  const idVaz = 'web:' + 'a'.repeat(24);
+  await web.guardar(idVaz, 'O fornecedor ainda não respondeu, o robô tenta de novo');
+  await web.guardar(idVaz, 'Código: 482913 收到');
+  const vaz = (dados.web[idVaz] || { mensagens: [] }).mensagens.map((m) => m.texto);
+  t('mensagem com palavra da origem é trocada por texto neutro', vaz.length === 2 && vaz.every((x) => !PROIBIDAS.test(x)) && /equipe/.test(vaz[0]), vaz.join(' | '));
+  delete dados.web[idVaz];
+
   const tudo = Object.values(dados.web || {}).flatMap((x) => x.mensagens.map((m) => m.texto));
   const ruim = tudo.filter((x) => PROIBIDAS.test(x));
   t('nada proibido chegou ao site', ruim.length === 0, ruim.join(' | '));
