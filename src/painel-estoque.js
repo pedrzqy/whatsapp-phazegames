@@ -84,7 +84,20 @@ async function acessos(codigos) {
   return Array.isArray(data?.acessos) ? data.acessos : [];
 }
 
+/**
+ * Pergunta ao painel se o lembrete de Pix pode prometer +1 jogo de presente.
+ * Quem decide é o painel: só pedido de Nintendo ainda não pago, uma promessa
+ * por cliente por semana, valendo até 23h59 de Brasília. O pedido que o mesmo
+ * cliente pagar no prazo ganha a vaga, e a mensagem de entrega leva o link
+ * para ele escolher o jogo.
+ */
+async function presente(codigo) {
+  if (!ligado()) return { presente: false };
+  const { data } = await http.post('/bot/presentes', { codigo });
+  return { presente: Boolean(data?.presente), ate: data?.ate || null };
+}
+
 /** A chave que o painel manda quando pede um envio (mesma PAINEL_BOT_CHAVE). */
 const chave = () => CHAVE;
 
-module.exports = { ligado, entregar, aEnviar, enviado, acessos, chave };
+module.exports = { ligado, entregar, aEnviar, enviado, acessos, presente, chave };

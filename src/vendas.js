@@ -579,11 +579,15 @@ async function entregarDoPainel(pedido) {
 
   if (resp.nada) return;
 
-  if (resp.falta.length && marcar(pedido.codigo, 'faltaPainel')) {
+  // O jogo de presente fica em aberto até o cliente escolher pelo link que
+  // vai na mensagem de entrega. Não é pendência do atendente, então não vira
+  // alerta; se o cliente não escolher, ele continua visível no painel.
+  const faltaDeGente = resp.falta.filter((f) => f.motivo !== 'presente');
+  if (faltaDeGente.length && marcar(pedido.codigo, 'faltaPainel')) {
     await avisarOperador(
       `📦 *Pedido pendente no painel*, ${pedido.codigo}\n\n` +
         `${pedido.nome || 'Cliente'}${pedido.telefone ? ` · ${pedido.telefone}` : ''}\n` +
-        resp.falta.map((f) => `• ${f.nome}${f.motivo === 'sem escolha' ? ' (não escolheu os jogos)' : ''}`).join('\n') +
+        faltaDeGente.map((f) => `• ${f.nome}${f.motivo === 'sem escolha' ? ' (não escolheu os jogos)' : ''}`).join('\n') +
         (resp.itens.length ? '\n\nO resto do pedido já vai para o cliente.' : '') +
         '\n\nNo painel, em Entregas feitas → Pendentes, digite login e senha que eu mando para o cliente.',
     );
@@ -824,16 +828,31 @@ async function lembrarPixPendente() {
     }
     if (!primeiro) continue;
 
+    // O presente é um empurrão para fechar hoje. Quem decide se vale é o
+    // painel (pedido de Nintendo, uma vez por semana por cliente); se ele não
+    // responder, o lembrete sai como sempre, sem prometer nada.
+    let presente = false;
+    if (painel.ligado()) {
+      try {
+        presente = Boolean((await painel.presente(fmt.codigo))?.presente);
+      } catch (err) {
+        console.warn(`[vendas] presente de ${fmt.codigo} não consultado: ${err.response?.status || err.message}`);
+      }
+    }
+
     const nome = primeiroNome(cru.customer_name || cru.customer?.name);
     const linhas = [
       `${nome ? `Oi, ${nome}! ` : 'Oi! '}Vi que seu pedido ficou aguardando pagamento 😊`,
       '',
-      `*${fmt.codigo}*${fmt.total ? ` — ${fmt.total}` : ''}`,
+      `*${fmt.codigo}*${fmt.total ? ` · ${fmt.total}` : ''}`,
     ];
     if (fmt.pix_copia_e_cola) {
       linhas.push('', '💠 *Pix copia e cola:*', `\`${fmt.pix_copia_e_cola}\``);
     } else if (fmt.link_pagamento) {
       linhas.push('', `💳 Pagar: ${fmt.link_pagamento}`);
+    }
+    if (presente) {
+      linhas.push('', '🎁 *Pagando hoje até as 23h59*, você ganha +1 jogo de presente. Junto com o seu pedido mando o link para você escolher qual quer.');
     }
     linhas.push('', '_Se já pagou ou mudou de ideia, pode ignorar 👍_');
 

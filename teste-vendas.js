@@ -500,6 +500,39 @@ const CLI = '5541999998888';
     enviadas = [];
     await vendas.lembrarPixPendente();
     t('duas pessoas recebem uma cada', enviadas.length === 2, `${enviadas.length} mensagem(ns)`);
+
+    // ── O presente do lembrete ───────────────────────────────
+    //
+    // "Pagando hoje ganha +1 jogo" é promessa com custo. Quem decide se vale
+    // é o painel; o lembrete só repete o que ele disse. Painel fora do ar não
+    // pode travar a cobrança nem prometer nada por conta própria.
+    {
+      const painelEst = require('./src/painel-estoque');
+      const salvo = { ...painelEst };
+      const barrado = require('./src/ponte/politica').vocabularioProibido();
+      const perguntas = [];
+      painelEst.ligado = () => true;
+      painelEst.presente = async (codigo) => { perguntas.push(codigo); return { presente: codigo === 'pres-sim' }; };
+      listaFalsa = [
+        { order_number: 'pres-sim', status: 'pending', total: 149, created_at: horas(3), customer_phone: '41977770001', customer_name: 'Gabi' },
+        { order_number: 'pres-nao', status: 'pending', total: 149, created_at: horas(3), customer_phone: '41977770002', customer_name: 'Hugo' },
+      ];
+      enviadas = [];
+      await vendas.lembrarPixPendente();
+      const gabi = enviadas.find((e) => e.para === '5541977770001');
+      const hugo = enviadas.find((e) => e.para === '5541977770002');
+      t('o painel é consultado sobre o presente', perguntas.includes('pres-sim') && perguntas.includes('pres-nao'), perguntas.join(','));
+      t('presente aprovado: o lembrete promete +1 jogo até 23h59', /\+1 jogo de presente/.test(gabi?.texto || '') && /23h59/.test(gabi?.texto || ''), (gabi?.texto || '').split('\n').find((l) => /presente/.test(l)));
+      t('sem aprovação do painel, nada de presente', Boolean(hugo) && !/presente/i.test(hugo.texto));
+      t('lembrete sem travessão e sem palavra barrada', !/—/.test(gabi?.texto || '') && !barrado.test(gabi?.texto || ''), (gabi?.texto || '').match(barrado)?.[0]);
+
+      painelEst.presente = async () => { throw new Error('fora do ar'); };
+      listaFalsa = [{ order_number: 'pres-fora', status: 'pending', total: 149, created_at: horas(3), customer_phone: '41977770003', customer_name: 'Iara' }];
+      enviadas = [];
+      await vendas.lembrarPixPendente();
+      t('painel fora do ar: o lembrete sai mesmo assim, sem presente', enviadas.length === 1 && !/presente/i.test(enviadas[0].texto));
+      Object.assign(painelEst, salvo);
+    }
   } else {
     t('fora do horário civil não cutuca ninguém', enviadas.length === 0, `${horaBRT}h BRT`);
   }
@@ -1365,6 +1398,19 @@ const CLI = '5541999998888';
     aEnviar = { nada: false, itens: [{ id: 'c60', nome: 'X', login: 'a', senha: 'b' }], falta: [], mensagem: 'MSG-NAO-PAGO' };
     await vendas.complementarDoPainel('pp-12');
     t('pedido não pago na Nerix: o painel não consegue mandar nada', !enviadas.some((e) => e.texto === 'MSG-NAO-PAGO'));
+    enviadas = []; marcadas = [];
+    resposta = { ...prontoComConta, itens: [{ id: 'c70', nome: 'Zelda', login: 'z70', senha: 's' }], falta: [{ nome: 'Jogo de presente', motivo: 'presente' }], mensagem: 'MSG-PP13 🎁 Seu jogo de presente' };
+    pedidoFalso = semChave('pp-13');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-13' } });
+    t('jogo de presente esperando escolha não vira alerta para o operador', !enviadas.some((e) => e.para === OP && /Pedido pendente no painel/.test(e.texto)));
+    t('e a mensagem com o link do presente vai para o cliente', enviadas.some((e) => e.para === CLI && /Seu jogo de presente/.test(e.texto)));
+    enviadas = [];
+    resposta = { ...prontoComConta, itens: [{ id: 'c71', nome: 'Zelda', login: 'z71', senha: 's' }], falta: [{ nome: 'Jogo de presente', motivo: 'presente' }, { nome: 'Mario Kart', motivo: 'sem conta' }], mensagem: 'MSG-PP14' };
+    pedidoFalso = semChave('pp-14');
+    await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-14' } });
+    const alertaComPresente = enviadas.find((e) => e.para === OP && /Pedido pendente no painel/.test(e.texto));
+    t('com outra pendência, o alerta sai só com ela', Boolean(alertaComPresente) && /Mario Kart/.test(alertaComPresente.texto) && !/presente/.test(alertaComPresente.texto), alertaComPresente?.texto.split('\n').slice(2, 4).join(' / '));
+
     painelEst.ligado = () => false;
     enviadas = []; chamadas = [];
     pedidoFalso = semChave('pp-10');
