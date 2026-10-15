@@ -217,7 +217,7 @@ const porId = (id) => TELAS.find((t) => t.id === id) || null;
  * escolhido. Um modelo inventando solução de console manda o cliente mexer em
  * configuração que não existe, e isso volta como reclamação.
  */
-function paraOPrompt() {
+function paraOPrompt(codigosLigados = true) {
   const linhas = TELAS.filter((t) => t.resposta).map(
     (t) => `- ${t.oQueE}\n  RESPONDA: "${t.resposta.replace(/\n+/g, ' ')}"${
       t.seInsistir ? `\n  SE ELE DISSER QUE JÁ FAZ DIAS: "${t.seInsistir}"` : ''
@@ -231,7 +231,7 @@ function paraOPrompt() {
     'de cada uma já está pronta. Use o texto indicado, com as suas palavras, ' +
     'mas SEM mudar o passo a passo nem inventar solução nova:\n' +
     linhas.join('\n') +
-    (pedeCodigo
+    (pedeCodigo && codigosLigados
       ? `\n- ${pedeCodigo.oQueE}\n  Aí NÃO é problema: peça o USUÁRIO da conta e use pedir_codigo_fornecedor.`
       : '') +
     '\nSe a foto for de uma tela que não está nesta lista, NÃO invente conserto: ' +

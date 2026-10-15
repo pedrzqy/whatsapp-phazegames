@@ -90,7 +90,7 @@ async function alertar(texto, imagem, nomeArquivo) {
 async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
   // NADA do que sai daqui para o cliente cita a origem do código.
   // Para ele, quem gera é a Phaze — e essa é a única versão que existe.
-  if (!cfg.ativa) {
+  if (!cfg.ativa || !ativa()) {
     return { aceito: false, mensagem: 'O sistema de código está em manutenção. Já te aviso 🙏🔧' };
   }
 
@@ -113,6 +113,21 @@ async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
       mensagem:
         'Preciso do usuário da conta exatamente como aparece na tela — só ele, ' +
         'sem mais nada junto (algo tipo *rrrtsr223*). Pode mandar?',
+    };
+  }
+
+  // Sem foto não existe pedido de código: do outro lado o código só sai vendo
+  // o print da tela. A ferramenta da IA pedia com a foto só quando ela vinha na
+  // mesma mensagem, e o login ia sozinho para lá; o cliente esperava por um
+  // código que nunca vinha. Sem foto nova, só passa quem já tem pedido aberto
+  // com foto (o cliente ansioso mandando o login de novo).
+  const aberto = fila.doCliente(from);
+  if (!imagemPath && !(aberto && (aberto.imagemPendente || tarefaAberta(aberto.id, 'pedir_codigo')))) {
+    return {
+      aceito: false,
+      mensagem:
+        'Para pegar o código eu preciso da *foto da tela* do console pedindo o código 📸\n\n' +
+        'Me manda a foto aqui e depois o login da conta.',
     };
   }
 
@@ -238,6 +253,7 @@ function respostaCongelada(atendimento) {
  * 'falhou' e 'concluida' ficam de fora: as duas já terminaram, e um pedido novo
  * depois delas é pedido de verdade, não repetição.
  */
+const MAX_ESPERAS = 3;
 const TAREFA_ABERTA = ['pendente', 'aguardando_aprovacao', 'executando'];
 
 /**
@@ -278,6 +294,17 @@ async function despachar(atendimento, opcoes = {}) {
   if (!respondendo && !atendimento.usuario) {
     await alertar(`⚠️ Atendimento de *${atendimento.nome}* sem usuário definido. Pulei.`);
     return;
+  }
+
+  // Segunda trava do "login sem foto": o pedirCodigo já recusa, mas a vez pode
+  // chegar por outro caminho (promoverProximo, estado antigo do disco). Login
+  // sozinho do outro lado não vira código, então não sai.
+  if (!respondendo && !atendimento.imagemPendente && !tarefaAberta(atendimento.id, tipo)) {
+    await alertar(
+      `⚠️ Pedido de código de *${atendimento.nome}* (${atendimento.usuario}) sem a foto da tela. ` +
+        'Não mandei nada: peça a foto ao cliente.',
+    );
+    return null;
   }
 
   // ── Já tem um envio deste tipo em pé? Então não faz outro ──
@@ -575,6 +602,24 @@ async function receberDoFornecedor(entrada) {
     registrarIgnorado();
     console.log(`[ponte] descartado como ruído: ${entrada.texto.slice(0, 60)}`);
     return;
+  }
+
+  // "Aguarde" (请稍等, 马上): ele está vendo e o código vem em seguida. Antes
+  // isto era "problema", que libera a vez na hora: o código chegava para um
+  // atendimento encerrado e se perdia, ou caía na vez do próximo. Agora a vez
+  // fica com o cliente, o prazo é empurrado e ninguém é incomodado. Depois de
+  // MAX_ESPERAS seguidas volta a ser problema, para "aguarde" sem fim não
+  // prender a fila.
+  if (c.tipo === 'espera') {
+    at.esperas = (at.esperas || 0) + 1;
+    if (at.esperas <= MAX_ESPERAS) {
+      at.expiraEm = Math.max(at.expiraEm || 0, Date.now() + cfg.fila.timeoutMinutos * 60 * 1000);
+      fila.registrar(at.id, 'vendedor', entrada.texto, '(pediu para aguardar)');
+      persistAgora();
+      console.log(`[ponte] ${at.nome}: pediram para aguardar (${at.esperas}/${MAX_ESPERAS}), a vez continua`);
+      if (at.esperas === 1) await humaniza.enviar(at.from, 'Seu código está saindo, só mais um instante ⏳');
+      return;
+    }
   }
 
   // Pacote (conta + senha + jogo) e senha solta SÃO entrega — 13% do que ele
@@ -1230,6 +1275,10 @@ function proximaTarefa() {
   // O braço precisa da URL da foto, não do nome do arquivo: ele roda noutra máquina.
   return {
     id: t.id,
+    // O braço amarra a leitura da resposta a este atendimento. Faltava aqui, e
+    // a trava de "marca vencida" do braço nunca ligava: a resposta atrasada do
+    // anterior podia ser lida como sendo do cliente da vez.
+    atendimentoId: t.atendimentoId,
     tipo: t.tipo,
     usuario: t.usuario,
     // Só no tipo responder_fornecedor. Vai como null nos outros para o braço

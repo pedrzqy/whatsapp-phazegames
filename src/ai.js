@@ -238,7 +238,8 @@ async function buildSystemPrompt() {
   const venderAqui = require('./chaves').ligada('vender');
   const siteUrl = config.store.url;
   const groupUrl = config.store.groupUrl;
-  const codeUrl = config.store.codeUrl;
+  const codigosLigados = require('./chaves').ligada('codigos');
+  const codeUrl = codigosLigados ? config.store.codeUrl : '';
   const tutorialUrl = config.store.tutorialUrl;
 
   return (
@@ -416,7 +417,7 @@ async function buildSystemPrompt() {
     // Vem de src/telas.js: o conserto é ESCOLHIDO, não gerado. Modelo
     // inventando solução de console manda o cliente mexer em configuração que
     // não existe, e isso volta como reclamação.
-    telas.paraOPrompt() + `\n\n` +
+    telas.paraOPrompt(codigosLigados) + `\n\n` +
 
     // FOTO: a instrução muda com o modelo, e ela PRECISA mudar junto.
     //
@@ -431,8 +432,10 @@ async function buildSystemPrompt() {
       : `FOTO: o cliente pode mandar print de tela, e você NÃO consegue ver imagem nenhuma. Nunca diga o que ` +
         `está na foto, nunca finja ter lido, e nunca peça para ele mandar outra: o problema não é a foto dele. ` +
         `Agradeça a foto antes de pedir qualquer coisa, ela não foi à toa. ` +
-        `Se ele falar em código, verificação, login ou tela do console, peça que ele mande a mensagem ` +
-        `"preciso do código", sozinha, que o passo a passo começa (a foto dele fica guardada, não se perde). ` +
+        (codigosLigados
+          ? `Se ele falar em código, verificação, login ou tela do console, peça que ele mande a mensagem ` +
+            `"preciso do código", sozinha, que o passo a passo começa (a foto dele fica guardada, não se perde). `
+          : `Se ele falar em código de verificação, diga que um atendente vai ajudar e use falar_com_atendente. `) +
         `Se for erro, peça o CÓDIGO DO ERRO que aparece na tela (algo tipo 2819-0042) ou uma frase do que ` +
         `apareceu, e com isso você resolve pelas telas conhecidas acima.\n\n`) +
 
@@ -487,7 +490,7 @@ async function buildSystemPrompt() {
 
 /** Chama o modelo com as ferramentas do bot (o chat() já faz o fallback em cascata). */
 function callWithTools(messages, deadline) {
-  return chat(messages, { tools: tools.definitions, deadline });
+  return chat(messages, { tools: tools.ativas(), deadline });
 }
 
 /** Erro de prazo estourado. Tipado para o chamador saber que é hora do menu. */

@@ -274,6 +274,16 @@ async function executarTarefa(chat, tarefa, titulo) {
     return executarResposta(chat, tarefa, titulo);
   }
 
+  // Pedido de código sem foto não sai. Do outro lado o código só vem com o
+  // print da tela; o login sozinho chegava lá e o cliente esperava por nada.
+  // O bot novo já não cria essa tarefa, mas os dois serviços sobem separado e
+  // um bot antigo ainda pode mandar.
+  if (!tarefa.imagem) {
+    await api.post('/resultado', { id: tarefa.id, ok: false, erro: 'pedido de código sem a foto da tela', fatal: true });
+    await evento('error', 'sem_foto', `${tarefa.usuario}: chegou sem a foto da tela, não mandei nada`);
+    return null;
+  }
+
   await evento('info', 'executando', `usuário ${tarefa.usuario} (tentativa ${tarefa.tentativa})`);
   await chat.abrirConversa(titulo);
 
@@ -294,13 +304,21 @@ async function executarTarefa(chat, tarefa, titulo) {
       // mesmo que não ter chegado, porque ele não baixa anexo. Ninguém
       // descobriria sozinho — o braço reportaria sucesso e o cliente esperaria
       // à toa até o timeout de 4h.
+      //
+      // E o login NÃO vai depois: arquivo + login é o mesmo que login sozinho,
+      // nada de código e o cliente esperando. Fatal, porque repetir mandaria a
+      // foto de novo no chat dele.
       if (r.comoArquivo) {
         await evento(
-          'warn',
+          'error',
           'foto_como_arquivo',
-          'A foto saiu como ARQUIVO, não como imagem — não vai ser aberta. ' +
-            'Manda o print na mão pelo chat.',
+          `A foto de ${tarefa.usuario} saiu como ARQUIVO, não como imagem: não mandei o login. ` +
+            'Manda o print e o login na mão pelo chat.',
         );
+        await api
+          .post('/resultado', { id: tarefa.id, ok: false, erro: 'foto saiu como arquivo', fatal: true })
+          .catch(() => {});
+        return null;
       }
     }
 
@@ -873,9 +891,20 @@ async function main() {
         console.warn(`[braço] marca de ${marcaDe} vencida (vez de ${st.atendimentoAtivoId}) — descartada`);
         marcaAtual = null;
         marcaDe = null;
+      } else if (esperando && !st.temAtendimentoAtivo) {
+        // A vez acabou e ninguém entrou: não há de quem ler.
+        marcaAtual = null;
+        marcaDe = null;
       } else if (st.temAtendimentoAtivo && esperando) {
         const achou = await lerRespostas(chat, marcaAtual, marcaDe, vistasDaMarca);
-        if (achou) marcaAtual = null; // vez encerrada; o bot promove o próximo
+        // Com o atendimento conhecido, a marca fica enquanto ele estiver na
+        // vez: depois de um "aguarde" (请稍等) o código vem na mensagem
+        // seguinte, e largar a marca na primeira resposta fazia o braço nunca
+        // ler o código. Quem encerra é a troca de vez, tratada acima como
+        // marca vencida; as já lidas não repetem por causa de vistasDaMarca.
+        // Sem o atendimento (tarefa de bot antigo) não há como saber de quem
+        // é a próxima resposta, então larga na primeira, como antes.
+        if (achou && !marcaDe) marcaAtual = null;
       }
 
       // Piso de ciclo. A espera normal é a do long-poll, mas se o bot

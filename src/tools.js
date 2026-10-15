@@ -555,6 +555,7 @@ async function criarPedido(args, ctx) {
 async function execute(name, args = {}, ctx = {}) {
   try {
     if (name === 'pedir_codigo_fornecedor') {
+      if (!ponte.ativa()) return { erro: 'codigo_desligado', instrucao_para_o_cliente: 'Chame falar_com_atendente: um atendente ajuda com isso.' };
       const usuario = (args.usuario || '').trim();
       if (!usuario) return { erro: 'usuario_vazio' };
 
@@ -783,4 +784,10 @@ async function execute(name, args = {}, ctx = {}) {
 // Nerix. Ele foi descoberto na marra (product_key vem null em produto de
 // conta, o Pix mora em payment.pix_qr_code) e ter duas leituras do mesmo
 // payload seria garantir que uma delas ficaria para trás.
-module.exports = { definitions, execute, formatOrder };
+/** As ferramentas que a IA enxerga agora: sem o código de segurança quando o #admin 4 está desligado. */
+function ativas() {
+  if (require('./chaves').ligada('codigos')) return definitions;
+  return definitions.filter((d) => d.function.name !== 'pedir_codigo_fornecedor');
+}
+
+module.exports = { definitions, ativas, execute, formatOrder };

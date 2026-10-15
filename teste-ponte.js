@@ -129,6 +129,11 @@ t('horário NÃO é código', codigo.classificar('19:39').tipo === 'problema');
 t('código com texto junto vira problema', codigo.classificar('你的code是394860').tipo === 'problema');
 t('3 dígitos é curto demais', codigo.classificar('394').tipo === 'problema');
 t('9 dígitos é longo demais', codigo.classificar('123456789').tipo === 'problema');
+for (const espera of ['请稍等', '亲，稍等一下哦', '马上发您', '稍等，我看一下', '好的稍等', '等一下', '稍后发你', '正在处理，请耐心等待']) {
+  t(`"${espera}" é pedido para aguardar`, codigo.classificar(espera).tipo === 'espera', codigo.classificar(espera).tipo);
+}
+t('"aguarde" com número junto NÃO é espera (pode ser o código)', codigo.classificar('稍等 394860').tipo !== 'espera');
+t('conta que não existe continua problema', codigo.classificar('这个账号不存在').tipo === 'problema');
 
 // ── Classificação: ruído, senha e pacote ───────────────────
 //
@@ -862,7 +867,7 @@ const OP = '5541999999999';
   const limitesMod = require('./src/ponte/limites');
 
   limitesMod.abrir('teste de congelamento', null);
-  const congelado = await ponteMod.pedirCodigo('5541911114444', 'Fulano', 'usuario1', null);
+  const congelado = await ponteMod.pedirCodigo('5541911114444', 'Fulano', 'usuario1', '/tmp/print.jpg');
 
   // Congelado NÃO rejeita mais: o pedido entra na fila e espera.
   t('pedido é aceito e fica na fila com os envios parados', congelado.aceito === true);
@@ -954,9 +959,9 @@ const OP = '5541999999999';
       // 3) Cliente novo com tudo parado: entra, é avisado uma vez, ninguém é alertado por isso.
       enviadasC.length = 0;
       const CLI_N = '5541933330001';
-      const r1 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', null);
-      const r2 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', null);
-      const r3 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', null);
+      const r1 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', '/tmp/print.jpg');
+      const r2 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', '/tmp/print.jpg');
+      const r3 = await ponteMod.pedirCodigo(CLI_N, 'Tales', 'tales1234', '/tmp/print.jpg');
       t('pedido durante o congelamento é aceito', r1.aceito && r2.aceito && r3.aceito);
       t('o cliente ouve a instabilidade uma vez só',
         /instabilidade/i.test(r1.mensagem) && !/instabilidade/i.test(r2.mensagem) && !/instabilidade/i.test(r3.mensagem),
@@ -1052,6 +1057,30 @@ const OP = '5541999999999';
       const tVez = novaTarefa(aVez, 0, 'pendente');
       const proxVez = ponteMod.proximaTarefa();
       t('a tarefa de quem está na vez continua saindo', proxVez && proxVez.id === tVez.id, JSON.stringify(proxVez));
+      // Sem isto o braço não sabe de quem é a leitura e a trava de "marca vencida"
+      // (resposta atrasada do anterior caindo no da vez) nunca liga.
+      t('  e leva o atendimento a que pertence', proxVez && proxVez.atendimentoId === aVez.id, JSON.stringify(proxVez));
+
+      // 10c) Sem foto não existe pedido de código. O outro lado só manda o
+      // código vendo o print; o login sozinho chegava lá (a ferramenta da IA
+      // pedia com a foto só se ela viesse na mesma mensagem) e o cliente
+      // esperava por nada.
+      zerar();
+      const semFoto = await ponteMod.pedirCodigo('5541977770001', 'SemFoto', 'semfoto11', null);
+      t('pedido novo sem foto é recusado', semFoto.aceito === false, JSON.stringify(semFoto));
+      t('  e pede a foto ao cliente', /foto/i.test(semFoto.mensagem || ''), semFoto.mensagem);
+      t('  e nada vai para o outro lado', dadosP.tarefas.length === 0 && !filaMod.doCliente('5541977770001'));
+      const comFoto = await ponteMod.pedirCodigo('5541977770002', 'ComFoto', 'comfoto22', '/tmp/print.jpg');
+      const tFoto = dadosP.tarefas.find((x) => x.usuario === 'comfoto22');
+      t('com foto, a tarefa leva a foto', comFoto.aceito && tFoto && tFoto.imagemPath === '/tmp/print.jpg', JSON.stringify(tFoto));
+      const repetiu = await ponteMod.pedirCodigo('5541977770002', 'ComFoto', 'comfoto22', null);
+      t('login repetido sem foto, com pedido aberto, não cria outro envio',
+        repetiu.aceito !== false && dadosP.tarefas.filter((x) => x.usuario === 'comfoto22').length === 1, JSON.stringify(repetiu));
+      const atSem = await cliente('0103');
+      atSem.usuario = 'semimg103';
+      const tSem = await ponteMod.despachar(atSem);
+      t('despachar pedido de código sem foto não cria tarefa', !tSem && !dadosP.tarefas.some((x) => x.usuario === 'semimg103'));
+      t('  e avisa o operador', aoOperador(/sem a foto/i).length === 1, aoOperador(/./).map((e) => e.texto.slice(0, 50)).join(' | '));
 
       // 11) Cota por hora do braço NÃO é falha: adia, sem congelar e sem encher o WhatsApp.
       zerar();
@@ -1203,7 +1232,7 @@ const OP = '5541999999999';
   bloco('nada de promessa antes da aprovação');
 
   const CLI_OK = '5541911115555';
-  const antesDoOk = await ponteMod.pedirCodigo(CLI_OK, 'Fulano', 'usuario9', null);
+  const antesDoOk = await ponteMod.pedirCodigo(CLI_OK, 'Fulano', 'usuario9', '/tmp/print.jpg');
   const tarefaCriada = estadoPonte.dados.tarefas.find((x) => x.usuario === 'usuario9');
 
   if (tarefaCriada && tarefaCriada.estado === 'aguardando_aprovacao') {
@@ -1546,7 +1575,7 @@ const OP = '5541999999999';
   estadoPonte.dados.tarefas.length = 0;
 
   await operador.executar('#teste', OP); // liga
-  const noTeste = await ponteMod.pedirCodigo(OP, 'Pedro', 'testeok1', null);
+  const noTeste = await ponteMod.pedirCodigo(OP, 'Pedro', 'testeok1', '/tmp/print.jpg');
   const tarefaTeste = estadoPonte.dados.tarefas.find((x) => x.usuario === 'testeok1');
   if (tarefaTeste && tarefaTeste.estado === 'aguardando_aprovacao') {
     t('no modo teste a mensagem cobra o #ok', /#ok \d+/.test(noTeste.mensagem), noTeste.mensagem);
@@ -2009,6 +2038,61 @@ const OP = '5541999999999';
   t('  sem entregar a origem', !AUTOMACAO.test(travou.aoOperador) &&
     !politica.temCJK(travou.aoOperador), (travou.aoOperador.match(AUTOMACAO) || [''])[0] || 'limpo');
 
+  // ── "Aguarde" não encerra a vez ─────────────────────────────
+  //
+  // Ele às vezes responde 请稍等 / 马上 antes do código. Isso caía em
+  // "problema": virava aprovação e liberava a vez na hora, e o código que vinha
+  // logo depois chegava "atrasado" para um atendimento já encerrado e se perdia.
+  {
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.tarefas = [];
+    estadoPonte.dados.aprovacoes = [];
+    const r = await filaMod.entrar('5541922220011', 'Caio');
+    r.atendimento.usuario = 'espera11';
+    await filaMod.entrar('5541922220012', 'Duda');
+    const atCaio = filaMod.ativo();
+    const prazoAntes = atCaio.expiraEm || 0;
+    const senderMod = require('./src/sender');
+    const antes = senderMod.send;
+    const saiu = [];
+    senderMod.send = async (para, txt) => { saiu.push({ para, texto: String(txt) }); };
+    try {
+      await ponteMod.receberDoFornecedor({ texto: '亲，请稍等一下哦' });
+      t('"aguarde" mantém o cliente na vez', filaMod.ativo() && filaMod.ativo().id === atCaio.id);
+      t('  sem virar decisão para você', estadoPonte.dados.aprovacoes.length === 0 && !saiu.some((s) => s.para === OP),
+        saiu.filter((s) => s.para === OP).map((s) => s.texto.slice(0, 40)).join(' | '));
+      t('  e o prazo dele é empurrado', (filaMod.ativo().expiraEm || 0) > Math.max(prazoAntes, Date.now() + 5 * 60_000));
+      await ponteMod.receberDoFornecedor({ texto: '马上' });
+      t('  um segundo "já vai" também espera', filaMod.ativo() && filaMod.ativo().id === atCaio.id);
+      t('  e o cliente ouve "só mais um instante" uma vez só',
+        saiu.filter((s) => s.para === '5541922220011' && /instante/i.test(s.texto)).length === 1,
+        saiu.filter((s) => s.para === '5541922220011').map((s) => s.texto.slice(0, 50)).join(' | '));
+      await ponteMod.receberDoFornecedor({ texto: '394860' });
+      t('o código que chega depois vai para o MESMO cliente',
+        saiu.some((s) => s.para === '5541922220011' && s.texto.includes('394860')),
+        saiu.map((s) => s.para.slice(-4) + ':' + s.texto.slice(0, 30)).join(' | '));
+      t('  e só então a vez passa', filaMod.ativo() && filaMod.ativo().from === '5541922220012');
+      const textos = saiu.filter((s) => s.para === '5541922220011').map((s) => s.texto).join(' ');
+      t('  sem entregar a origem ao cliente', !AUTOMACAO.test(textos) && !politica.temCJK(textos), textos.slice(0, 80));
+    } finally {
+      senderMod.send = antes;
+    }
+
+    // Freio: "aguarde" sem fim não pode prender a fila. Da 4ª em diante é
+    // problema de novo e passa por você.
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.aprovacoes = [];
+    const r2 = await filaMod.entrar('5541922220013', 'Eli');
+    r2.atendimento.usuario = 'espera13';
+    senderMod.send = async () => {};
+    try {
+      for (let i = 0; i < 4; i++) await ponteMod.receberDoFornecedor({ texto: '请稍等' });
+    } finally {
+      senderMod.send = antes;
+    }
+    t('4º "aguarde" seguido vira decisão sua', estadoPonte.dados.aprovacoes.length === 1, String(estadoPonte.dados.aprovacoes.length));
+  }
+
   tradutorMod.paraCliente = traduzReal;
   estadoPonte.dados.atendimentos = [];
   estadoPonte.dados.aprovacoes = [];
@@ -2105,7 +2189,7 @@ const OP = '5541999999999';
   // É o único caminho em que texto HUMANO não revisado chega ao cliente. O
   // operador digita no celular, olhando a tradução do outro lado, e é aí que
   // sai um ¥70 ou um link copiado sem querer.
-  const paraEditar = await receberDele('稍等', 'aguarde um pouco');
+  const paraEditar = await receberDele('这个账号不存在', 'essa conta não existe');
   const editou = await aprovar(
     `#editar ${paraEditar.aprovacao.id} Custa ¥70 aqui, olha https://item.taobao.com/i.htm - 好的`,
   );
@@ -2120,7 +2204,7 @@ const OP = '5541999999999';
 
   // Texto que vira nada depois do filtro não pode sair como bolha vazia com a
   // vez encerrada — pior que não mandar.
-  const soPreco = await receberDele('稍等', 'aguarde');
+  const soPreco = await receberDele('这个账号不存在', 'essa conta não existe');
   const vazio = await aprovar(`#editar ${soPreco.aprovacao.id} ¥70`);
   t('texto que some no filtro não é enviado', vazio.aoCliente.trim() === '', vazio.aoCliente);
   t('  e o operador é mandado escrever', /#editar/.test(vazio.aoOperador), vazio.aoOperador);
@@ -3217,6 +3301,7 @@ const OP = '5541999999999';
   estadoI.dados.tarefas = [];
   const paraCodigo = await filaMod.entrar('5541933338888', 'Beto');
   paraCodigo.atendimento.usuario = 'rrtt9321';
+  paraCodigo.atendimento.imagemPendente = '/tmp/print.jpg';
   senderI.send = async () => {};
   await ponteMod.despachar(paraCodigo.atendimento);
   senderI.send = sendIAntes;
@@ -3887,7 +3972,7 @@ const OP = '5541999999999';
     };
     let base = 0;
     const cli = (n) => `5541988${String(1000 + base + n)}`;
-    const entrarV = async (n) => (await ponteMod.pedirCodigo(cli(n), `Cli${n}`, `usuario${n}x`, null));
+    const entrarV = async (n) => (await ponteMod.pedirCodigo(cli(n), `Cli${n}`, `usuario${n}x`, '/tmp/print.jpg'));
     const PROX = /\*próximo\*/;
 
     // ── A) avanço da fila ──

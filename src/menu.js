@@ -32,7 +32,7 @@ const NODES = {
       { label: '🕹️ Suporte Nintendo Switch', curto: 'Suporte Switch', topic: 'plataforma_nintendo' },
       { label: '💨 Suporte Steam', curto: 'Suporte Steam', topic: 'plataforma_steam' },
       { label: '🎯 Pedir um jogo que não achei', curto: 'Pedir um jogo', action: 'pedirjogo' },
-      { label: '🔑 Preciso de um código de segurança', curto: 'Código de segurança', action: 'codigo' },
+      { label: '🔑 Preciso de um código de segurança', curto: 'Código de segurança', action: 'codigo', so: 'codigos' },
       { label: '💰 Meu pedido / financeiro', curto: 'Meu pedido', action: 'pedido' },
       // O ÚNICO ramo que acorda a IA. Aqui o cliente escreve livre, cada caso
       // é diferente, e não há resposta pronta que sirva.
@@ -70,12 +70,23 @@ const FOOTERS = [
   'Se preferir, é só escrever sua dúvida que eu te respondo. 😉',
 ];
 
+/**
+ * As opções que valem AGORA.
+ *
+ * A opção com `so` só aparece com aquela chave do #admin ligada. Com o código
+ * de segurança desligado (#admin 4 off), a opção "Preciso de um código" some e
+ * as de baixo sobem um número: o cliente não vê uma porta que não abre.
+ */
+function opcoes(node) {
+  return node.options.filter((o) => !o.so || require('./chaves').ligada(o.so));
+}
+
 /** Renderiza o menu de um nó (título variado + opções numeradas + rodapé). */
 function render(nodeId) {
   const node = NODES[nodeId];
   if (!node) return null;
   const title = variator.pick(node.title);
-  const lines = node.options.map((o, i) => `*${i + 1}.* ${o.label}`);
+  const lines = opcoes(node).map((o, i) => `*${i + 1}.* ${o.label}`);
   const footer = variator.pick(FOOTERS);
   return `${title}\n\n${lines.join('\n')}\n\n${footer}`;
 }
@@ -106,7 +117,7 @@ function lista(nodeId, antes = '') {
 ${chamada}`.replace(/\*/g, '') : chamada.replace(/\*/g, ''),
     buttonText: 'Ver opções',
     footer: 'Você também pode digitar o número da opção.',
-    rows: node.options.map((o, i) => ({
+    rows: opcoes(node).map((o, i) => ({
       rowId: String(i + 1),
       title: tituloDaLinha(o),
       description: '',
@@ -196,7 +207,8 @@ function resolve(nodeId, input) {
   if (so) {
     const n = parseInt(so[1], 10);
     // A faixa continua estreita: "23" não é a opção 23 nem a 2, é texto solto.
-    if (n >= 1 && n <= node.options.length) return node.options[n - 1];
+    const validas = opcoes(node);
+    if (n >= 1 && n <= validas.length) return validas[n - 1];
     return null;
   }
 
@@ -212,7 +224,7 @@ function resolve(nodeId, input) {
   const alvo = normalizar(bruto);
   if (!alvo) return null;
   return (
-    node.options.find(
+    opcoes(node).find(
       (o) => normalizar(tituloDaLinha(o)) === alvo || normalizar(o.label) === alvo,
     ) || null
   );
@@ -238,4 +250,4 @@ function resposta(topic) {
   return `${fato}\n\n_${variator.pick(FECHOS)}_`;
 }
 
-module.exports = { NODES, render, lista, resolve, resposta };
+module.exports = { NODES, render, lista, resolve, resposta, opcoes };

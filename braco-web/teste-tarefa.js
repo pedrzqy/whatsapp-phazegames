@@ -24,7 +24,7 @@ const reportado = [];
 const criarReal = axios.create;
 axios.create = () => ({
   post: async (url, corpo) => { reportado.push({ url, corpo }); return { data: {} }; },
-  get: async () => ({ data: {} }),
+  get: async () => ({ data: Buffer.from('foto') }),
 });
 
 const { executarTarefa, lerRespostas } = require('./src/index');
@@ -38,13 +38,13 @@ const t = (nome, cond, extra = '') => {
 const bloco = (nome) => console.log('\n--- ' + nome + ' ---');
 
 /** Chat dublê: registra a sequência de ações, na ordem. */
-function chatFalso() {
+function chatFalso(foto = { via: 'clipboard' }) {
   const feito = [];
   return {
     feito,
     abrirConversa: async (titulo) => { feito.push(`abrirConversa:${titulo}`); },
     marca: async () => { feito.push('marca'); return { ate: '2026-08-27', chaves: [] }; },
-    enviarFoto: async () => { feito.push('enviarFoto'); return { via: 'clipboard' }; },
+    enviarFoto: async () => { feito.push('enviarFoto'); return foto; },
     irParaOFim: async () => { feito.push('irParaOFim'); },
     enviarTexto: async (txt) => { feito.push(`enviarTexto:${txt}`); },
   };
@@ -102,13 +102,13 @@ function chatFalso() {
 
   const chat3 = chatFalso();
   reportado.length = 0;
-  await executarTarefa(chat3, { id: '3', tipo: 'pedir_codigo', usuario: 'rrtt9321', tentativa: 1 }, 'x');
-  t('manda o usuário', chat3.feito.includes('enviarTexto:rrtt9321'), chat3.feito.join(' → '));
+  await executarTarefa(chat3, { id: '3', tipo: 'pedir_codigo', usuario: 'rrtt9321', imagem: 'a.jpg', tentativa: 1 }, 'x');
+  t('manda a foto e depois o usuário', chat3.feito.indexOf('enviarFoto') !== -1 && chat3.feito.indexOf('enviarFoto') < chat3.feito.indexOf('enviarTexto:rrtt9321'), chat3.feito.join(' → '));
   t('  e reporta sucesso', reportado.some((r) => r.url === '/resultado' && r.corpo.ok === true));
 
   const chat4 = chatFalso();
   reportado.length = 0;
-  await executarTarefa(chat4, { id: '4', usuario: 'ffgg2093', tentativa: 1 }, 'x');
+  await executarTarefa(chat4, { id: '4', usuario: 'ffgg2093', imagem: 'a.jpg', tentativa: 1 }, 'x');
   t('tarefa SEM tipo cai no fluxo antigo', chat4.feito.includes('enviarTexto:ffgg2093'),
     chat4.feito.join(' → '));
 
@@ -116,9 +116,39 @@ function chatFalso() {
   // antigo em vez de sumir. Não é o ideal, mas é o desfecho visível — o
   // operador vê o envio errado; um envio que nunca acontece ninguém vê.
   const chat5 = chatFalso();
-  await executarTarefa(chat5, { id: '5', tipo: 'algo_que_nao_existe', usuario: 'zzz1111', tentativa: 1 }, 'x');
+  await executarTarefa(chat5, { id: '5', tipo: 'algo_que_nao_existe', usuario: 'zzz1111', imagem: 'a.jpg', tentativa: 1 }, 'x');
   t('tipo desconhecido não some em silêncio',
     chat5.feito.some((f) => f.startsWith('enviarTexto')), chat5.feito.join(' → '));
+
+  // ── Login sem foto não sai ──────────────────────────────
+  //
+  // Do outro lado o código só sai vendo o print da tela. O login sozinho
+  // chegava lá e o cliente esperava por nada; um bot antigo ainda pode criar
+  // essa tarefa, então o braço também recusa.
+  bloco('pedido de código sem foto');
+  const chat6 = chatFalso();
+  reportado.length = 0;
+  const marca6 = await executarTarefa(chat6, { id: '6', tipo: 'pedir_codigo', usuario: 'wwee4938', tentativa: 1 }, 'x');
+  t('não manda o login sozinho', !chat6.feito.some((f) => f.startsWith('enviarTexto')), chat6.feito.join(' → '));
+  t('  nem abre a conversa', chat6.feito.length === 0, chat6.feito.join(' → '));
+  t('  reporta falha fatal', reportado.some((r) => r.url === '/resultado' && r.corpo.ok === false && r.corpo.fatal === true),
+    JSON.stringify(reportado.filter((r) => r.url === '/resultado').map((r) => r.corpo)));
+  t('  e sem marca', marca6 === null, String(marca6));
+
+  // ── Foto que saiu como ARQUIVO ──────────────────────────
+  //
+  // O outro lado não abre o cartão de download. Mandar o login depois é o
+  // mesmo que mandar sem foto: nada de código, e o cliente esperando.
+  bloco('foto saiu como arquivo');
+  const chat7 = chatFalso({ via: 'input', comoArquivo: true });
+  reportado.length = 0;
+  const marca7 = await executarTarefa(chat7, { id: '7', tipo: 'pedir_codigo', usuario: 'wwee3894', imagem: 'a.jpg', tentativa: 1 }, 'x');
+  t('não manda o login depois do arquivo', !chat7.feito.some((f) => f.startsWith('enviarTexto')), chat7.feito.join(' → '));
+  t('  reporta falha fatal (não repetir a foto)', reportado.some((r) => r.url === '/resultado' && r.corpo.ok === false && r.corpo.fatal === true),
+    JSON.stringify(reportado.filter((r) => r.url === '/resultado').map((r) => r.corpo)));
+  t('  e avisa como erro', reportado.some((r) => r.url !== '/resultado' && /arquivo/i.test(JSON.stringify(r.corpo))),
+    JSON.stringify(reportado.map((r) => r.url)));
+  t('  e sem marca', marca7 === null, String(marca7));
 
   // lerRespostas: amarra ao atendimento, ignora vazio e nao reporta duas vezes.
   {

@@ -1012,40 +1012,18 @@ class Chat {
       }
     }
 
-    // ── 4. Último recurso: qualquer input ─────────────────────
-    // O input genérico manda como ARQUIVO (o cartão 下载文件 que o outro lado
-    // não abre). Só entra se NADA tiver aparecido no chat — e o total é o que
-    // responde isso, porque a contagem de mensagens nossas não enxerga foto.
+    // ── Nenhum caminho de imagem funcionou: falha, nunca arquivo ──
+    // Já existiu um 4º passo, "qualquer input", que mandava como ARQUIVO (o
+    // cartão 下载文件) com a ideia de que era melhor que nada. Não é: o outro
+    // lado não abre o cartão, o login ia junto e o cliente esperava por um
+    // código que não vinha. Falhar aqui devolve a tarefa à fila e avisa.
     if (
       !via &&
       !this._imagemComprometida &&
       (await this._quantasMinhas()) === antes &&
       (await this._quantasTotais()) === antesTotal
     ) {
-      const inputs = await this.frame.$$("input[type='file']");
-      if (!inputs.length) {
-        throw new SeletorNaoEncontrado('nenhum input[type=file] no frame do chat');
-      }
-      let anexou = false;
-      for (const input of inputs) {
-        try {
-          // comLimite igual ao do caminho principal (linha ~590): sem ele cada
-          // input escondido pode segurar 30s no default do Playwright, e a
-          // página costuma ter vários — o laço inteiro passava de minuto.
-          await comLimite(input.setInputFiles(caminhoLocal), 20_000, 'setInputFiles (fallback)');
-          anexou = true;
-          break;
-        } catch {
-          // input escondido/desconectado — tenta o próximo
-        }
-      }
-      if (!anexou) {
-        throw new SeletorNaoEncontrado(
-          `nenhum dos ${inputs.length} input[type=file] aceitou o arquivo`,
-        );
-      }
-      via = 'input genérico (fallback)';
-      await this.pagina.waitForTimeout(humaniza.ms(2500, 5000));
+      throw new Error('a foto não entrou como imagem por nenhum caminho; não mandei como arquivo');
     }
 
     await this.checarBloqueio();

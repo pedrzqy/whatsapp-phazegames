@@ -60,7 +60,8 @@ const CATALOGO = [
     explica:
       'Responder mensagem de cliente. Desligado, é só código: nada automático sai — ' +
       'nem menu, nem IA, nem cutucada, nem pergunta de pós-venda. A mensagem chega e ' +
-      'ninguém responde, exceto o pedido de código (#inicio) e o #meulogin.',
+      'ninguém responde. A entrega das contas, o Pix e o aviso de pagamento continuam ' +
+      'saindo, e o #meulogin também.',
     padrao: () => config.autoReply,
     risco: 'medio',
   },
@@ -103,9 +104,12 @@ const CATALOGO = [
   },
   {
     id: 'codigos',
-    curto: 'Busca o código com o outro lado',
+    curto: 'Entrega código de segurança',
     nome: 'Códigos de segurança',
-    explica: 'Buscar o código com o outro lado quando o cliente precisa.',
+    explica:
+      'Buscar o código de segurança quando o cliente precisa. Desligado, o bot fica só ' +
+      'no básico: entrega as contas e mostra os pagamentos. A opção de código some do menu, ' +
+      'a IA para de oferecer e o site do código responde que está em manutenção.',
     padrao: () => cfgPonte.ativa,
     risco: 'medio',
   },

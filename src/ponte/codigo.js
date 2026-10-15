@@ -49,6 +49,17 @@ const RUIDO = [
 ];
 
 /**
+ * "Aguarde": ele avisa que está vendo e manda o código em seguida.
+ *
+ * Caía em "problema", que vira decisão do operador e LIBERA a vez na hora. O
+ * código que vinha logo depois chegava para um atendimento já encerrado e se
+ * perdia, ou pior, caía na vez do próximo. Só vale sem número junto: "稍等
+ * 394860" pode ser o próprio código e precisa de um humano olhando.
+ */
+const ESPERA = /稍等|稍后|等一下|等下|等一会|等会|请等|等等|马上|一会儿?|耐心等|正在(处理|弄|查|发|看)|在(弄|查|处理)|我看(一)?下|查(一)?下|处理中|别急/;
+const TEM_NUMERO = /\d{4,}/;
+
+/**
  * Senha de conta: alfanumérico com letra E dígito, sozinho na mensagem.
  *
  * O `密码` do pacote é o que dá certeza; aqui, solto, é inferência — e ela tem
@@ -100,7 +111,7 @@ function extrairPacotes(texto) {
 
 /**
  * @typedef {object} Classificacao
- * @property {'codigo'|'senha'|'pacote'|'ignorar'|'problema'} tipo
+ * @property {'codigo'|'senha'|'pacote'|'espera'|'ignorar'|'problema'} tipo
  * @property {string|null} codigo  o código, quando tipo==='codigo'
  * @property {string|null} senha   a senha, quando tipo==='senha'
  * @property {Array<{conta:string,senha:string,jogo:string}>} [pacotes]  quando tipo==='pacote'
@@ -133,6 +144,10 @@ function classificar(texto) {
   const pacotes = extrairPacotes(bruto);
   if (pacotes.length) {
     return { ...base, tipo: 'pacote', pacotes };
+  }
+
+  if (ESPERA.test(bruto) && !TEM_NUMERO.test(bruto)) {
+    return { ...base, tipo: 'espera' };
   }
 
   if (NAO_E_CODIGO.some((re) => re.test(bruto))) {

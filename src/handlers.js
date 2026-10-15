@@ -276,6 +276,13 @@ async function acaoDoMenu(acao, { from, pushName }) {
     // Quem conduz continua sendo a recepcao.js, sem IA: ela é dona do passo a
     // passo inteiro (foto → login), do prazo e do aviso de horário. O menu só
     // abre a porta que a frase abria.
+    // Com o #admin 4 desligado a opção nem aparece, mas quem guardou o número
+    // de uma lista antiga ainda pode cair aqui: volta ao menu, sem prometer nada.
+    if (!ponte.ativa()) {
+      store.saveContact(from, { menuNode: 'main' });
+      await sender.send(from, menu.render('main'));
+      return true;
+    }
     store.saveContact(from, { menuNode: null });
     const inicio = recepcao.iniciarFluxo(from);
     if (inicio.acao === 'responder') {
@@ -936,16 +943,16 @@ async function naoEntendi(from, pushName) {
 
   await sender.send(
     from,
-    `${variator.pick(SO_O_NUMERO)}\n\n_Ou *#inicio* para ver a lista de novo._`,
+    `${variator.pick(SO_O_NUMERO).replace('{N}', menu.opcoes(menu.NODES.main).length)}\n\n_Ou *#inicio* para ver a lista de novo._`,
   );
 }
 
 // A segunda tentativa em diante. Curtas de propósito: a lista inteira já está
 // na tela dele, logo acima.
 const SO_O_NUMERO = [
-  'Ainda não peguei 🤔 Me manda só o *número* da opção, de 1 a 8.',
-  'Me diz o *número* da opção que você quer, de 1 a 8, que eu sigo daqui 👍',
-  'Responde só com o *número* da lista aí em cima, de 1 a 8.',
+  'Ainda não peguei 🤔 Me manda só o *número* da opção, de 1 a {N}.',
+  'Me diz o *número* da opção que você quer, de 1 a {N}, que eu sigo daqui 👍',
+  'Responde só com o *número* da lista aí em cima, de 1 a {N}.',
 ];
 
 /**
@@ -980,6 +987,14 @@ const SO_O_NUMERO = [
  * mandou antes de saber o passo a passo não se perde.
  */
 function pedirCodigoDoErro(from) {
+  if (!ponte.ativa()) {
+    return sender.send(
+      from,
+      'Recebi sua foto 👍\n\n' +
+        'Se for um erro na tela, me diz o *código do erro* (algo tipo *2819-0042*) ' +
+        'ou escreve numa frase o que apareceu.',
+    );
+  }
   return sender.send(
     from,
     'Recebi sua foto 👍\n\n' +
