@@ -33,6 +33,7 @@ const nerix = require('./nerix');
 const sender = require('./sender');
 const telefones = require('./telefone');
 const painel = require('./painel-estoque');
+const chaves = require('./chaves');
 const { formatOrder } = require('./tools');
 
 // A lista de operadores mora na config da ponte porque foi lá que ela nasceu.
@@ -665,11 +666,34 @@ async function mandarContasDoPainel(pedido, resp) {
     await sender.send(numero, '_Guarda essa mensagem. Se sumir, é só digitar *#meulogin* aqui._');
     console.log(`[painel] ${resp.itens.length} conta(s) do pedido ${pedido.codigo} entregues`);
     await painel.enviado(pedido.codigo, true, null, ids);
+    await oferecerMais2(pedido, numero, resp.oferta);
   } catch (err) {
     console.error(`[painel] envio de ${pedido.codigo} falhou:`, err.message);
     await avisarOperador(`⚠️ *Entrega falhou*, pedido ${pedido.codigo}\n\nNão consegui mandar para ${numero}. Precisa entregar na mão:`);
     await avisarOperador(resp.mensagem);
     await painel.enviado(pedido.codigo, false, err.message);
+  }
+}
+
+/**
+ * Logo depois da entrega, UMA mensagem curta com a oferta do +2, que vale 30
+ * minutos a partir do pagamento. Só quando o painel manda a oferta (pedido de
+ * Nintendo pago agora, cliente que ainda não comprou o +2) e com o
+ * atendimento ligado (#admin 1): desligado, nada promocional sai.
+ * Marca antes de mandar, como o resto do arquivo: o pior caso é a oferta não
+ * sair, nunca sair duas vezes.
+ */
+async function oferecerMais2(pedido, numero, oferta) {
+  if (!oferta || !oferta.link || !numero) return;
+  if (!chaves.ligada('atendimento')) return;
+  if (!marcar(pedido.codigo, 'ofertaMais2')) return;
+  try {
+    await sender.send(
+      numero,
+      `🎁 Presente para quem acabou de comprar: *+2 jogos por ${oferta.preco || 'um preço especial'}* nos próximos 30 minutos. Escolhe aqui: ${oferta.link}`,
+    );
+  } catch (err) {
+    console.warn(`[vendas] oferta do pedido ${pedido.codigo} não saiu: ${err.message}`);
   }
 }
 

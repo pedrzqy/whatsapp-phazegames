@@ -1411,6 +1411,39 @@ const CLI = '5541999998888';
     const alertaComPresente = enviadas.find((e) => e.para === OP && /Pedido pendente no painel/.test(e.texto));
     t('com outra pendência, o alerta sai só com ela', Boolean(alertaComPresente) && /Mario Kart/.test(alertaComPresente.texto) && !/presente/.test(alertaComPresente.texto), alertaComPresente?.texto.split('\n').slice(2, 4).join(' / '));
 
+    {
+      const chavesMod = require('./src/chaves');
+      const ligadaOriginal = chavesMod.ligada;
+      const LINK = 'https://phazegames.com/order/pp-15?escolher=jogos';
+      enviadas = [];
+      resposta = { ...prontoComConta, itens: [{ id: 'c80', nome: 'Zelda', login: 'z80', senha: 's' }], falta: [], mensagem: 'MSG-PP15', oferta: { link: LINK, preco: 'R$ 89,90' } };
+      pedidoFalso = semChave('pp-15');
+      await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-15' } });
+      const aoCli15 = enviadas.filter((e) => e.para === CLI);
+      const iEntrega = aoCli15.findIndex((e) => e.texto === 'MSG-PP15');
+      const iOferta = aoCli15.findIndex((e) => e.texto.includes(LINK));
+      t('oferta do +2 sai logo depois da entrega, com o link', iEntrega >= 0 && iOferta > iEntrega, aoCli15.map((e) => e.texto.slice(0, 25)).join(' | '));
+      t('  com preço e prazo, sem travessão e sem palavra barrada', /\+2 jogos por R\$ 89,90/.test(aoCli15[iOferta]?.texto || '') && /30 minutos/.test(aoCli15[iOferta]?.texto || '') && !/—/.test(aoCli15[iOferta]?.texto || '') && !PROIBIDO.test(aoCli15[iOferta]?.texto || ''));
+      enviadas = [];
+      await vendas.onEvento({ event: 'order.delivered', data: { order_number: 'pp-15' } });
+      await vendas.complementarDoPainel('pp-15');
+      t('  uma vez por pedido', !enviadas.some((e) => e.texto.includes(LINK)));
+
+      enviadas = [];
+      resposta = { ...prontoComConta, itens: [{ id: 'c81', nome: 'Zelda', login: 'z81', senha: 's' }], falta: [], mensagem: 'MSG-PP16', oferta: null };
+      pedidoFalso = semChave('pp-16');
+      await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-16' } });
+      t('sem oferta do painel (pedido que não é de Nintendo ou fora do prazo), nada de oferta', enviadas.some((e) => e.texto === 'MSG-PP16') && !enviadas.some((e) => /\+2 jogos/.test(e.texto)));
+
+      chavesMod.ligada = (id) => (id === 'atendimento' ? false : ligadaOriginal(id));
+      enviadas = [];
+      resposta = { ...prontoComConta, itens: [{ id: 'c82', nome: 'Zelda', login: 'z82', senha: 's' }], falta: [], mensagem: 'MSG-PP17', oferta: { link: LINK, preco: 'R$ 89,90' } };
+      pedidoFalso = semChave('pp-17');
+      await vendas.onEvento({ event: 'order.paid', data: { order_number: 'pp-17' } });
+      t('atendimento desligado (#admin 1): a entrega sai, a oferta não', enviadas.some((e) => e.texto === 'MSG-PP17') && !enviadas.some((e) => e.texto.includes(LINK)));
+      chavesMod.ligada = ligadaOriginal;
+    }
+
     painelEst.ligado = () => false;
     enviadas = []; chamadas = [];
     pedidoFalso = semChave('pp-10');

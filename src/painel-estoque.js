@@ -45,6 +45,9 @@ async function entregar(codigo) {
     itens: Array.isArray(data?.itens) ? data.itens : [],
     falta: Array.isArray(data?.falta) ? data.falta : [],
     mensagem: String(data?.mensagem || ''),
+    // Oferta do +2 para quem acabou de pagar pedido de Nintendo. Quem decide
+    // se existe (plataforma, prazo de 30 min, se ele já comprou) é o painel.
+    oferta: data?.oferta && data.oferta.link ? { link: String(data.oferta.link), preco: String(data.oferta.preco || '') } : null,
   };
 }
 
