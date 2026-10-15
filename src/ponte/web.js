@@ -110,7 +110,7 @@ function guardar(id, texto) {
 }
 
 function ligado() {
-  return Boolean(cfg.ativa && require('./index').ativa());
+  return Boolean(cfg.ativa);
 }
 
 function atendimentoDo(id) {

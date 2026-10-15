@@ -555,7 +555,7 @@ async function criarPedido(args, ctx) {
 async function execute(name, args = {}, ctx = {}) {
   try {
     if (name === 'pedir_codigo_fornecedor') {
-      if (!ponte.ativa()) return { erro: 'codigo_desligado', instrucao_para_o_cliente: 'Chame falar_com_atendente: um atendente ajuda com isso.' };
+      if (!ponte.ativa()) return { erro: 'codigo_desligado', instrucao_para_o_cliente: `O código sai pelo site ${config.store.codeUrl}: ele entra com o usuário da conta e manda a foto da tela.` };
       const usuario = (args.usuario || '').trim();
       if (!usuario) return { erro: 'usuario_vazio' };
 

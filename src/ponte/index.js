@@ -90,7 +90,7 @@ async function alertar(texto, imagem, nomeArquivo) {
 async function pedirCodigo(from, nome, usuarioBruto, imagemPath = null) {
   // NADA do que sai daqui para o cliente cita a origem do código.
   // Para ele, quem gera é a Phaze — e essa é a única versão que existe.
-  if (!cfg.ativa || !ativa()) {
+  if (!cfg.ativa) {
     return { aceito: false, mensagem: 'O sistema de código está em manutenção. Já te aviso 🙏🔧' };
   }
 

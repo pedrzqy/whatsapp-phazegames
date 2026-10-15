@@ -634,24 +634,24 @@ function webhookDe(numero, message, pushName = 'Cliente') {
 
   chaves.definir('atendimento', antesAtendimento);
 
-  bloco('codigo desligado no #admin 4: o bot fica so no basico');
+  bloco('codigo desligado no #admin 4: no WhatsApp so o link do site');
   const menuMod = require('./src/menu');
   const toolsMod = require('./src/tools');
   chaves.definir('codigos', false);
   const menuOff = menuMod.render('main');
-  t('a opcao de codigo some do menu', !/c[oó]digo de seguran/i.test(menuOff), menuOff.slice(0, 80));
-  t('  e o 5 passa a ser o pedido', menuMod.resolve('main', '5')?.action === 'pedido');
-  t('  e a lista nativa tem 7 linhas', menuMod.lista('main').rows.length === 7);
+  t('o menu continua com a opcao de codigo', /c[oó]digo de seguran/i.test(menuOff) && menuMod.resolve('main', '5')?.action === 'codigo');
+  const SITE_CLI = '5541900003336';
+  store.saveContact(SITE_CLI, { ...jaSaudado, menuNode: 'main', modoIA: false });
+  enviadas.length = 0;
+  await entregar(webhookDe(SITE_CLI, { conversation: '5' }));
+  const linkSite = enviadas.map((e) => e.texto).join('\n');
+  t('  e a opcao 5 manda o link do site', /codigons\.online/.test(linkSite), linkSite.slice(0, 80) || '(silencio)');
   t('a IA nao recebe a ferramenta de codigo',
     !toolsMod.ativas().some((d) => d.function.name === 'pedir_codigo_fornecedor'));
   const promptOff = await ai.buildSystemPrompt();
-  t('  nem o site do codigo no prompt', !/codigons|pedir_codigo_fornecedor|preciso do c[oó]digo/i.test(promptOff));
-  const pedidoOff = await require('./src/ponte').pedirCodigo('5541900003335', 'Teste', 'abc123', '/tmp/print.jpg');
-  t('pedirCodigo recusa com o #admin 4 desligado', pedidoOff.aceito === false);
+  t('  e o prompt manda para o site', /codigons/.test(promptOff) && !/pedir_codigo_fornecedor|preciso do c[oó]digo/i.test(promptOff));
 
   chaves.definir('codigos', true);
-  t('ligado de novo, a opcao volta como 5',
-    menuMod.resolve('main', '5')?.action === 'codigo' && menuMod.lista('main').rows.length === 8);
   t('  e a ferramenta volta para a IA',
     toolsMod.ativas().some((d) => d.function.name === 'pedir_codigo_fornecedor'));
   chaves.definir('codigos', antesCodigos);

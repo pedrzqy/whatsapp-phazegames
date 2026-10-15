@@ -170,12 +170,20 @@ const PROIBIDAS = /fornecedor|taobao|\bbot\b|rob[oô]|autom[aá]tic|script|—|#
   atrasoOperador = 0;
   chaves.definir('aprovacao', false);
 
-  bloco('desligado');
+  bloco('codigo desligado so no WhatsApp');
   chaves.definir('codigos', false);
-  t('o estado diz desligado', (await chamar('GET', '/web/estado')).j.ligado === false);
+  t('o site continua ligado', (await chamar('GET', '/web/estado')).j.ligado === true);
   r = await pedir('dddd4444');
-  t('o pedido é recusado com aviso de manutenção', r.j.aceito === false && /manutenção/.test(r.j.mensagem), r.j.mensagem);
+  t('e aceita o pedido', r.j.aceito === true, r.j.mensagem);
   chaves.definir('codigos', null);
+
+  bloco('desligado no servidor');
+  const cfgW = require('./src/ponte/config');
+  cfgW.ativa = false;
+  t('o estado diz desligado', (await chamar('GET', '/web/estado')).j.ligado === false);
+  r = await pedir('eeee5555');
+  t('o pedido é recusado com aviso de manutenção', r.j.aceito === false && /manutenção/.test(r.j.mensagem), r.j.mensagem);
+  cfgW.ativa = true;
 
   bloco('pedido que não existe');
   s = (await ver('web:' + '0'.repeat(24))).j;

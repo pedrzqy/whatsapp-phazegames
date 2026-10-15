@@ -32,7 +32,7 @@ const NODES = {
       { label: '🕹️ Suporte Nintendo Switch', curto: 'Suporte Switch', topic: 'plataforma_nintendo' },
       { label: '💨 Suporte Steam', curto: 'Suporte Steam', topic: 'plataforma_steam' },
       { label: '🎯 Pedir um jogo que não achei', curto: 'Pedir um jogo', action: 'pedirjogo' },
-      { label: '🔑 Preciso de um código de segurança', curto: 'Código de segurança', action: 'codigo', so: 'codigos' },
+      { label: '🔑 Preciso de um código de segurança', curto: 'Código de segurança', action: 'codigo' },
       { label: '💰 Meu pedido / financeiro', curto: 'Meu pedido', action: 'pedido' },
       // O ÚNICO ramo que acorda a IA. Aqui o cliente escreve livre, cada caso
       // é diferente, e não há resposta pronta que sirva.

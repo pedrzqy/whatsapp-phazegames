@@ -104,12 +104,12 @@ const CATALOGO = [
   },
   {
     id: 'codigos',
-    curto: 'Entrega código de segurança',
+    curto: 'Código de segurança pelo WhatsApp',
     nome: 'Códigos de segurança',
     explica:
-      'Buscar o código de segurança quando o cliente precisa. Desligado, o bot fica só ' +
-      'no básico: entrega as contas e mostra os pagamentos. A opção de código some do menu, ' +
-      'a IA para de oferecer e o site do código responde que está em manutenção.',
+      'Buscar o código de segurança pelo WhatsApp. Desligado, o WhatsApp fica só no básico: ' +
+      'entrega as contas e mostra os pagamentos, e quem pede código recebe o link do site. ' +
+      'O site do código continua funcionando.',
     padrao: () => cfgPonte.ativa,
     risco: 'medio',
   },

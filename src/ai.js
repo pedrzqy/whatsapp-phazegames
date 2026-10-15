@@ -239,7 +239,7 @@ async function buildSystemPrompt() {
   const siteUrl = config.store.url;
   const groupUrl = config.store.groupUrl;
   const codigosLigados = require('./chaves').ligada('codigos');
-  const codeUrl = codigosLigados ? config.store.codeUrl : '';
+  const codeUrl = config.store.codeUrl;
   const tutorialUrl = config.store.tutorialUrl;
 
   return (
@@ -435,7 +435,7 @@ async function buildSystemPrompt() {
         (codigosLigados
           ? `Se ele falar em código, verificação, login ou tela do console, peça que ele mande a mensagem ` +
             `"preciso do código", sozinha, que o passo a passo começa (a foto dele fica guardada, não se perde). `
-          : `Se ele falar em código de verificação, diga que um atendente vai ajudar e use falar_com_atendente. `) +
+          : `Se ele falar em código de verificação, mande o site ${codeUrl}: lá ele entra com o usuário e a foto da tela. `) +
         `Se for erro, peça o CÓDIGO DO ERRO que aparece na tela (algo tipo 2819-0042) ou uma frase do que ` +
         `apareceu, e com isso você resolve pelas telas conhecidas acima.\n\n`) +
 

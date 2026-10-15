@@ -276,11 +276,10 @@ async function acaoDoMenu(acao, { from, pushName }) {
     // Quem conduz continua sendo a recepcao.js, sem IA: ela é dona do passo a
     // passo inteiro (foto → login), do prazo e do aviso de horário. O menu só
     // abre a porta que a frase abria.
-    // Com o #admin 4 desligado a opção nem aparece, mas quem guardou o número
-    // de uma lista antiga ainda pode cair aqui: volta ao menu, sem prometer nada.
+    // Com o #admin 4 desligado o código sai só pelo site.
     if (!ponte.ativa()) {
-      store.saveContact(from, { menuNode: 'main' });
-      await sender.send(from, menu.render('main'));
+      store.saveContact(from, { menuNode: null });
+      await sender.send(from, `Pega seu código de segurança pelo nosso site, é rapidinho:\n\n${config.store.codeUrl}\n\nLá você entra com o *usuário* da conta e manda a *foto da tela*. O código aparece ali mesmo. 😉`);
       return true;
     }
     store.saveContact(from, { menuNode: null });
@@ -991,6 +990,7 @@ function pedirCodigoDoErro(from) {
     return sender.send(
       from,
       'Recebi sua foto 👍\n\n' +
+        `Se é para pegar o *código de segurança*, é pelo site: ${config.store.codeUrl}\n\n` +
         'Se for um erro na tela, me diz o *código do erro* (algo tipo *2819-0042*) ' +
         'ou escreve numa frase o que apareceu.',
     );
