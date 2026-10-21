@@ -1446,7 +1446,11 @@ const OP = '5541999999999';
     // WhatsApp que nunca responde: não pode impedir o encerramento.
     require('./src/sender').send = (para) => (String(para).startsWith('web:') ? Promise.resolve(true) : new Promise(() => {}));
     const inicio = Date.now();
+    // O prazo de 8 s do comando usa timer unref (certo no servidor). Aqui, sem
+    // nada mais vivo, o Node saía no meio do arquivo e pulava o resto dos testes.
+    const segura = setInterval(() => {}, 1000);
     const r = await operador.executar('#limpar fila', OP);
+    clearInterval(segura);
     require('./src/sender').send = sr3;
     const abertos = estadoPonte.dados.atendimentos.filter((a) => a.estado === 'ativo' || a.estado === 'aguardando');
     t('nenhum atendimento aberto sobra', abertos.length === 0, String(abertos.length));
