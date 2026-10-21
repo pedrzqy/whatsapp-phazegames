@@ -58,6 +58,9 @@ async function abrir({ visivel = false } = {}) {
       '--disable-blink-features=AutomationControlled',
       '--no-first-run',
       '--no-default-browser-check',
+      // Container Docker tem /dev/shm de 64MB; o Chrome estoura isso ao colar
+      // imagem (prévia 发送图片) e a aba morre sem aviso. Usa /tmp no lugar.
+      '--disable-dev-shm-usage',
       '--disable-features=IsolateOrigins,site-per-process',
     ],
     ignoreDefaultArgs: ['--enable-automation'],
