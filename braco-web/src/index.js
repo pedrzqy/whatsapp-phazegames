@@ -254,6 +254,9 @@ async function baixarFoto(nome) {
  * para cima faz a tela saltar E o clique seguinte errar o alvo.
  */
 async function executarTarefa(chat, tarefa, titulo) {
+  // A tarefa diz em QUAL conversa acontece (dois fornecedores: o login decide).
+  // Bot antigo não manda o campo — vale o título do estado, como sempre.
+  titulo = tarefa.chatTitulo || titulo;
   const { pode, motivo } = humaniza.podeEnviar();
   if (!pode) {
     await evento('warn', 'rate_limit_local', motivo);
@@ -411,7 +414,7 @@ async function executarResposta(chat, tarefa, titulo) {
  * `vistas`: o que já foi reportado com esta marca. Um balão não é reportado
  * duas vezes mesmo que a leitura o devolva de novo (janela do DOM, releitura).
  */
-async function lerRespostas(chat, marca, atendimentoId = null, vistas = new Set()) {
+async function lerRespostas(chat, marca, atendimentoId = null, vistas = new Set(), chatTitulo = null) {
   const todas = await chat.lerNovas(marca);
   const novas = todas.filter((m) => {
     const texto = String(m?.texto || '').replace(/[\u200B-\u200F\u2060\uFEFF\u00A0]/g, ' ').trim();
@@ -431,6 +434,8 @@ async function lerRespostas(chat, marca, atendimentoId = null, vistas = new Set(
   await api.post('/entrada', {
     // A marca pertence a ESTE atendimento; o bot descarta se a vez já mudou.
     atendimentoId,
+    // De QUAL conversa foi lido: o bot descarta se não for a do login da vez.
+    chatTitulo,
     mensagens: novas.map((m) => ({ texto: m.texto })),
   });
   return true;
@@ -508,6 +513,17 @@ async function main() {
   // Conversa do fornecedor está aberta na tela? Volta a false quando algo dá
   // errado, para o próximo ciclo reabrir em vez de escrever no vazio.
   let conversaAberta = false;
+  // QUAL conversa está aberta (dois fornecedores). Só vale com conversaAberta.
+  let tituloAberto = null;
+  // Em qual conversa a marca acima foi tirada: é lá que as respostas aparecem.
+  let marcaTitulo = null;
+
+  /** Abre a conversa pelo título e guarda qual é. */
+  async function abrirNaTela(titulo) {
+    await chat.abrirConversa(titulo);
+    conversaAberta = true;
+    tituloAberto = titulo;
+  }
 
   /**
    * A página morreu? Reabre o Chrome e volta ao chat.
@@ -623,8 +639,7 @@ async function main() {
     if (pedida) await api.post('/recarga-feita', {}).catch(() => {});
 
     await irAoChat(motivo);
-    await chat.abrirConversa(titulo);
-    conversaAberta = true;
+    await abrirNaTela(titulo);
     console.log('[braço] tela recarregada — conversa aberta na última mensagem');
     await evento('info', 'recarga', motivo);
   }
@@ -647,10 +662,7 @@ async function main() {
     console.log(`[braço] exportando histórico (até ${telas} telas)`);
 
     try {
-      if (!conversaAberta) {
-        await chat.abrirConversa(titulo);
-        conversaAberta = true;
-      }
+      if (!conversaAberta || tituloAberto !== titulo) await abrirNaTela(titulo);
 
       const r = await chat.lerHistorico({ maxRolagens: telas });
       await api.post('/historico', {
@@ -820,10 +832,9 @@ async function main() {
       // parado na tela "您尚未选择联系人" — impossível saber pelo VNC se estava
       // vivo. Além disso, humano que conversa com um fornecedor deixa o chat
       // dele aberto; abrir só na hora de escrever é padrão de robô.
-      if (!conversaAberta) {
+      if (!conversaAberta || tituloAberto !== titulo) {
         try {
-          await chat.abrirConversa(titulo);
-          conversaAberta = true;
+          await abrirNaTela(titulo);
           console.log(`[braço] conversa de "${titulo}" aberta`);
         } catch (err) {
           console.warn(`[braço] não abri a conversa: ${err.message}`);
@@ -868,7 +879,17 @@ async function main() {
         throw err;
       }
       if (resp.status === 200) {
-        marcaAtual = await executarTarefa(chat, resp.data, titulo);
+        // Conversa DESTA tarefa (o login decide a loja); sem o campo, a do estado.
+        const tituloTarefa = resp.data.chatTitulo || titulo;
+        marcaAtual = await executarTarefa(chat, resp.data, tituloTarefa);
+        if (marcaAtual) {
+          // executarTarefa abriu a conversa dela.
+          conversaAberta = true;
+          tituloAberto = tituloTarefa;
+          marcaTitulo = tituloTarefa;
+        } else if (tituloAberto !== tituloTarefa) {
+          conversaAberta = false; // pode ter aberto outra e saído cedo: reabre
+        }
         marcaDe = resp.data.atendimentoId || null;
         vistasDaMarca = new Set();
         await dormir(humaniza.pausaLonga());
@@ -890,13 +911,17 @@ async function main() {
       if (esperando && st.atendimentoAtivoId && marcaDe && st.atendimentoAtivoId !== marcaDe) {
         console.warn(`[braço] marca de ${marcaDe} vencida (vez de ${st.atendimentoAtivoId}) — descartada`);
         marcaAtual = null;
-        marcaDe = null;
+        marcaDe = null; marcaTitulo = null;
       } else if (esperando && !st.temAtendimentoAtivo) {
         // A vez acabou e ninguém entrou: não há de quem ler.
         marcaAtual = null;
-        marcaDe = null;
+        marcaDe = null; marcaTitulo = null;
       } else if (st.temAtendimentoAtivo && esperando) {
-        const achou = await lerRespostas(chat, marcaAtual, marcaDe, vistasDaMarca);
+        // Respostas aparecem na conversa onde a marca foi tirada. Se a tela
+        // está noutra loja, volta para ela ANTES de ler (nunca lê às cegas).
+        const tituloLeitura = marcaTitulo || titulo;
+        if (!conversaAberta || tituloAberto !== tituloLeitura) await abrirNaTela(tituloLeitura);
+        const achou = await lerRespostas(chat, marcaAtual, marcaDe, vistasDaMarca, tituloLeitura);
         // Com o atendimento conhecido, a marca fica enquanto ele estiver na
         // vez: depois de um "aguarde" (请稍等) o código vem na mensagem
         // seguinte, e largar a marca na primeira resposta fazia o braço nunca

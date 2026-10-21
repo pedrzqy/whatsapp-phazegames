@@ -19,6 +19,16 @@ module.exports = {
     id: process.env.PONTE_SELLER_ID || 'vendedor-principal',
     // Título EXATO da conversa como aparece na lista de mensagens do app da Taobao.
     chatTitulo: process.env.PONTE_SELLER_CHAT_TITLE || '',
+    // SEGUNDO fornecedor, só para logins de certos domínios (ver roteamento.js).
+    // Título EXATO da conversa, como o de cima. Padrão = a loja de logo rosa.
+    chatTitulo2: process.env.PONTE_SELLER2_CHAT_TITLE ?? '百汇游戏店',
+    // Domínios de e-mail (lista por vírgula, sem @) que SÓ esse fornecedor
+    // atende. Todo o resto continua no principal. ATENÇÃO: se a variável já
+    // existe no Environment do serviço, ela VENCE este padrão.
+    dominios2: (process.env.PONTE_SELLER2_DOMINIOS ?? 'exctp.com')
+      .split(',')
+      .map((d) => d.trim().toLowerCase().replace(/^@/, ''))
+      .filter(Boolean),
     // Fuso em que as janelas abaixo estão escritas. Brasília por padrão: a
     // janela vem da OBSERVAÇÃO do operador, e observar em fuso próprio evita
     // uma conversão a mais para errar.

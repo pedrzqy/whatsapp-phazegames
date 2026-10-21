@@ -247,6 +247,13 @@ arquivo de estado novo — quatro já honram.
 
 ---
 
+## 7b · Dois fornecedores (logins @exctp.com)
+
+- `src/ponte/roteamento.js` decide a conversa pelo dominio do login: `PONTE_SELLER2_DOMINIOS` (padrao `exctp.com`) vai para `PONTE_SELLER2_CHAT_TITLE` (padrao `百汇游戏店`); o resto para `PONTE_SELLER_CHAT_TITLE`. Env no Easypanel vence o padrao.
+- A tarefa carrega `chatTitulo`; `/estado` devolve a conversa da vez (fila serial = so uma por vez); o braco abre a conversa PELO TITULO (`braco-web/src/lista.js`, rola a lista se preciso) e manda `chatTitulo` no `/entrada`; o bot descarta resposta de conversa que nao e a do login da vez.
+- Antes o braco clicava no 1o item da lista: outra loja escrevendo congelava tudo. Nao ha mais isso.
+- Limites por hora (braco `ENVIO_POR_HORA`) e disjuntor continuam GLOBAIS. Deploy dos DOIS servicos.
+
 ## 8 · Pendências
 
 **Congelamento de envios (incidente do pico).** Agora ele volta sozinho. Falha

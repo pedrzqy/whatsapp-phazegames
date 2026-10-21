@@ -218,6 +218,10 @@ t('só dígitos rejeitado (parece código)', codigo.validarUsuario('394860').val
   codigo.validarUsuario('394860').motivo);
 t('vazio rejeitado', codigo.validarUsuario('').valido === false);
 t('e-mail rejeitado', codigo.validarUsuario('joao@gmail.com').valido === false);
+t('e-mail do dominio da loja 2 aceito', codigo.validarUsuario('joao.silva@exctp.com').valido === true);
+t('  mesmo em maiuscula', codigo.validarUsuario('Joao@EXCTP.COM').valido === true);
+t('  mas dominio parecido rejeitado', codigo.validarUsuario('joao@exctp.com.br').valido === false);
+t('  extrai de frase', codigo.extrairUsuario('meu login e joao1@exctp.com') === 'joao1@exctp.com');
 
 bloco('extrair usuário de frase solta');
 t('extrai de frase', codigo.extrairUsuario('meu usuario e rrrtsr223') === 'rrrtsr223');
@@ -3863,6 +3867,78 @@ const OP = '5541999999999';
       !saiuO.some((s) => s.para === '5541922220077'));
     t('  e continua na vez', filaMod.ativo() && filaMod.ativo().from === '5541922220077');
     t('  operador e avisado', saiuO.some((s) => s.para === OP && /555444/.test(s.texto)));
+  }
+
+  // ── Dois fornecedores: o domínio do login decide a conversa ──
+  bloco('roteamento: @exctp.com vai para a loja 2');
+  {
+    const filaMod = require('./src/ponte/fila');
+    const roteMod = require('./src/ponte/roteamento');
+    const cfgR = require('./src/ponte/config');
+    require('./src/ponte/limites').fechar('teste');
+    estadoPonte.dados.coletaVistaEm = Date.now();
+    const TIT1 = cfgR.vendedor.chatTitulo;
+    const TIT2 = cfgR.vendedor.chatTitulo2;
+    t('titulo 2 padrao e a loja rosa', TIT2 === '百汇游戏店' && TIT1 === '山王电玩', `${TIT1} / ${TIT2}`);
+    t('@exctp.com roteia para a loja 2', roteMod.chatTituloPara('fulano@exctp.com') === TIT2);
+    t('  sem diferenciar maiuscula', roteMod.chatTituloPara('Fulano@EXCTP.COM') === TIT2);
+    t('  nem espaco sobrando', roteMod.chatTituloPara(' fulano@exctp.com ') === TIT2);
+    t('outro dominio vai para a loja 1', roteMod.chatTituloPara('fulano@gmail.com') === TIT1);
+    t('  dominio parecido nao conta', roteMod.chatTituloPara('x@notexctp.com') === TIT1 && roteMod.chatTituloPara('x@exctp.com.br') === TIT1);
+    t('  login que nao e e-mail vai para a loja 1', roteMod.chatTituloPara('ttxx7887') === TIT1);
+
+    // Pelo fluxo real: a tarefa carrega a conversa e o braço recebe ela.
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.tarefas = [];
+    const CLI2 = '5541955550002';
+    const r2 = await ponteMod.pedirCodigo(CLI2, 'Dois', 'cli@exctp.com', '/tmp/print.jpg');
+    const tk2 = estadoPonte.dados.tarefas.find((x) => x.usuario === 'cli@exctp.com');
+    t('tarefa de @exctp.com nasce com a conversa 2', r2.aceito && tk2 && tk2.chatTitulo === TIT2, JSON.stringify(tk2));
+    tk2.estado = 'pendente'; tk2.agendadaPara = 0;
+    t('com ele na vez, o braco e mandado para a conversa 2', ponteMod.chatTituloAtual() === TIT2);
+    const prox2 = ponteMod.proximaTarefa();
+    t('o braco recebe a tarefa com a conversa', prox2 && prox2.chatTitulo === TIT2, JSON.stringify(prox2));
+
+    // Resposta vinda da conversa errada nao resolve o pedido.
+    const enviou = [];
+    const senderR = require('./src/sender');
+    const antesR = senderR.send;
+    senderR.send = async (para, txt) => { enviou.push({ para, texto: String(txt) }); };
+    try {
+      await ponteMod.receberDoFornecedor({ texto: '731942', chatTitulo: TIT1, atendimentoId: r2.atendimento?.id || filaMod.ativo().id });
+      t('codigo lido na conversa 1 NAO entrega ao pedido da conversa 2',
+        !enviou.some((e) => e.para === CLI2) && filaMod.ativo() && filaMod.ativo().from === CLI2);
+      await ponteMod.receberDoFornecedor({ texto: '731942', chatTitulo: TIT2, atendimentoId: filaMod.ativo().id });
+      t('o mesmo codigo lido na conversa 2 entrega', enviou.some((e) => e.para === CLI2 && /731942/.test(e.texto)));
+    } finally {
+      senderR.send = antesR;
+    }
+
+    // Pedido da conversa 1: resposta da conversa 2 tambem nao vale.
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.tarefas = [];
+    const CLI1 = '5541955550001';
+    const r1 = await ponteMod.pedirCodigo(CLI1, 'Um', 'cli12345', '/tmp/print.jpg');
+    const tk1 = estadoPonte.dados.tarefas.find((x) => x.usuario === 'cli12345');
+    t('tarefa de outro dominio nasce na conversa 1', r1.aceito && tk1 && tk1.chatTitulo === TIT1);
+    t('ocioso/sem tarefa em pe volta para a principal',
+      (() => { estadoPonte.dados.tarefas = []; estadoPonte.dados.atendimentos = []; return ponteMod.chatTituloAtual() === TIT1; })());
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.tarefas = [];
+    await ponteMod.pedirCodigo(CLI1, 'Um', 'cli12345', '/tmp/print.jpg');
+    enviou.length = 0;
+    senderR.send = async (para, txt) => { enviou.push({ para, texto: String(txt) }); };
+    try {
+      await ponteMod.receberDoFornecedor({ texto: '555111', chatTitulo: TIT2, atendimentoId: filaMod.ativo().id });
+      t('resposta da conversa 2 NAO resolve pedido da conversa 1',
+        !enviou.some((e) => e.para === CLI1) && filaMod.ativo() && filaMod.ativo().from === CLI1);
+      await ponteMod.receberDoFornecedor({ texto: '555111', atendimentoId: filaMod.ativo().id });
+      t('braco antigo (sem titulo) continua entregando', enviou.some((e) => e.para === CLI1 && /555111/.test(e.texto)));
+    } finally {
+      senderR.send = antesR;
+    }
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.tarefas = [];
   }
 
   // ── Pós-código: vídeo de instalação + pedido de avaliação ──

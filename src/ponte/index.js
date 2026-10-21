@@ -38,6 +38,7 @@ const { dados, persist, persistAgora, proximoId, emTeste, registrarIgnorado } = 
 const sender = require('../sender');
 const humaniza = require('./humaniza');
 const variantes = require('./variantes');
+const roteamento = require('./roteamento');
 
 async function alertar(texto, imagem, nomeArquivo) {
   if (!cfg.operador.numeros.length) {
@@ -390,7 +391,19 @@ Use *#responder* e escreva em português que eu traduzo.`,
     return;
   }
 
-  const saida = politica.paraFornecedor(bruto);
+  // O login de e-mail da loja 2 (ex.: x@exctp.com) é justamente o que TEM que
+  // sair, mas a política barra qualquer e-mail. Esconde só ESSE login da
+  // política (marcador sem letra nem @) e devolve depois; qualquer outro
+  // e-mail no texto continua barrado.
+  const loginLoja2 = roteamento.ehDoFornecedor2(atendimento.usuario)
+    ? String(atendimento.usuario).trim()
+    : '';
+  const MARCA_LOGIN = '';
+  const escondido = loginLoja2
+    ? bruto.split(loginLoja2).join(MARCA_LOGIN)
+    : bruto;
+  const saida = politica.paraFornecedor(escondido);
+  if (loginLoja2) saida.texto = saida.texto.split(MARCA_LOGIN).join(loginLoja2);
   if (saida.texto !== bruto || saida.flags.length) {
     await alertar(
       `⚠️ Não mandei nada no atendimento de *${atendimento.nome}*: o texto tinha dado que não ` +
@@ -405,6 +418,9 @@ Use *#responder* e escreva em português que eu traduzo.`,
     atendimentoId: atendimento.id,
     tipo,
     usuario: atendimento.usuario,
+    // Em QUAL conversa esta tarefa acontece (e de onde a resposta dela pode
+    // vir). Decidido pelo domínio do login — ver roteamento.js.
+    chatTitulo: roteamento.chatTituloPara(atendimento.usuario),
     // `textoZh` estava no typedef desde o começo e nunca tinha sido usado.
     textoZh: respondendo ? saida.texto : null,
     // Resposta não leva foto: a foto é do print da tela do cliente e só faz
@@ -567,7 +583,16 @@ async function receberDoFornecedor(entrada) {
   // anterior: entregá-la ao da vez daria o código na conta errada.
   const vencida = Boolean(at && entrada.atendimentoId && entrada.atendimentoId !== at.id);
 
-  if (!at || vencida) {
+  // E amarrada a UMA conversa. Cada login tem a loja que o atende; mensagem
+  // vinda da conversa da OUTRA loja não é resposta a este pedido (a outra loja
+  // nunca recebeu o login dele). Sem título (braço antigo) não há o que
+  // conferir: segue como sempre.
+  const outraConversa = Boolean(
+    at && at.usuario && entrada.chatTitulo &&
+      entrada.chatTitulo !== roteamento.chatTituloPara(at.usuario),
+  );
+
+  if (!at || vencida || outraConversa) {
     orfaAvisar(entrada.texto);
     return;
   }
@@ -1260,6 +1285,21 @@ function descartarOrfas() {
   if (mudou) persistAgora();
 }
 
+/**
+ * Conversa em que o braço deve estar AGORA: a do atendimento da vez; sem vez,
+ * a da tarefa que está para sair; ocioso, a principal.
+ *
+ * A fila é serial (um cliente por vez), então só existe uma conversa "da vez".
+ * O braço fica nela; quando a vez muda de loja, ele troca.
+ */
+function chatTituloAtual() {
+  const at = fila.ativo();
+  if (at?.usuario) return roteamento.chatTituloPara(at.usuario);
+  const t = dados.tarefas.find((x) => ['pendente', 'executando'].includes(x.estado));
+  if (t) return t.chatTitulo || roteamento.chatTituloPara(t.usuario);
+  return cfg.vendedor.chatTitulo;
+}
+
 function proximaTarefa() {
   recuperarTravadas();
   descartarOrfas();
@@ -1281,6 +1321,8 @@ function proximaTarefa() {
     atendimentoId: t.atendimentoId,
     tipo: t.tipo,
     usuario: t.usuario,
+    // Tarefa gravada antes desta versão não tem o campo: recalcula pelo login.
+    chatTitulo: t.chatTitulo || roteamento.chatTituloPara(t.usuario),
     // Só no tipo responder_fornecedor. Vai como null nos outros para o braço
     // não ter como mandar texto num fluxo que não pede texto.
     textoZh: t.tipo === 'responder_fornecedor' ? t.textoZh || null : null,
@@ -1738,7 +1780,12 @@ function iniciar() {
   if (!cfg.vendedor.chatTitulo) {
     console.warn('[ponte] PONTE_SELLER_CHAT_TITLE vazio — o braço não acha o chat.');
   }
-  console.log(`[ponte] ativa · modo ${cfg.modo} · fornecedor ${cfg.vendedor.chatTitulo}`);
+  console.log(
+    `[ponte] ativa · modo ${cfg.modo} · fornecedor ${cfg.vendedor.chatTitulo}` +
+      (cfg.vendedor.chatTitulo2
+        ? ` · fornecedor 2 ${cfg.vendedor.chatTitulo2} (${cfg.vendedor.dominios2.join(',')})`
+        : ''),
+  );
   setInterval(tick, 60 * 1000).unref();
 }
 
@@ -1845,6 +1892,7 @@ module.exports = {
   descarregarOrfas,
   entregarCodigo,
   proximaTarefa,
+  chatTituloAtual,
   devolverTarefa,
   resultadoTarefa,
   bloqueioDetectado,

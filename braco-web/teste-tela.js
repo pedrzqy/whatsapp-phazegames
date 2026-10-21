@@ -180,6 +180,7 @@ t('nenhum candidato mira por posição', !CAND.some((c) => /nth-child|nth-of-typ
   chat4.prender = async () => {};
   chat4.checarBloqueio = async () => {};
   chat4._achar = async () => ({ el: elementoFalso(chat4.pagina) });
+  chat4._acharItemDaConversa = async () => elementoFalso(chat4.pagina);
   chat4._clicar = async () => {};
   chat4.frame = {
     evaluate: async () => {
@@ -204,6 +205,7 @@ t('nenhum candidato mira por posição', !CAND.some((c) => /nth-child|nth-of-typ
   chat5.prender = async () => {};
   chat5.checarBloqueio = async () => {};
   chat5._achar = async () => ({ el: elementoFalso(chat5.pagina) });
+  chat5._acharItemDaConversa = async () => elementoFalso(chat5.pagina);
   chat5._clicar = async () => {};
   chat5.frame = { evaluate: async () => 'outra loja qualquer' };
   chat5._irParaOFim = async () => { desceu2.n++; };
@@ -215,6 +217,38 @@ t('nenhum candidato mira por posição', !CAND.some((c) => /nth-child|nth-of-typ
   // Descer numa conversa que vamos abandonar é rolagem à toa na tela de outro
   // fornecedor — atividade que ninguém pediu, na conversa errada.
   t('e não desce a conversa errada', desceu2.n === 0);
+
+  console.log('\n--- outra loja no topo: abre PELO TÍTULO ---');
+
+  const clicados = [];
+  const chat6 = chatFalso(paginaFalsa(CHAT_URL));
+  chat6.prender = async () => {};
+  chat6.checarBloqueio = async () => {};
+  chat6._achar = async () => ({ el: elementoFalso(chat6.pagina) });
+  chat6._clicar = async (el) => { clicados.push(el.i); };
+  chat6._irParaOFim = async () => {};
+  chat6.frame = {
+    // Lista: a loja rosa (que acabou de escrever) no topo, a nossa em terceiro.
+    $$eval: async () => [
+      { texto: '百汇游戏店\n好的', visivel: true },
+      { texto: 'outra loja', visivel: true },
+      { texto: '山王电玩\nok', visivel: true },
+    ],
+    locator: () => ({ nth: (i) => ({ i, scrollIntoViewIfNeeded: async () => {} }) }),
+    evaluate: async () => 'conversa com 山王电玩 aberta',
+  };
+  await chat6.abrirConversa('山王电玩');
+  t('clicou no 3o item (o do título), não no 1o', clicados.length === 1 && clicados[0] === 2, JSON.stringify(clicados));
+
+  let msg = '';
+  const chat7 = chatFalso(paginaFalsa(CHAT_URL));
+  chat7.prender = async () => {};
+  chat7.checarBloqueio = async () => {};
+  chat7._achar = async () => ({ el: elementoFalso(chat7.pagina) });
+  chat7._rolarListaDeConversas = async () => false;
+  chat7.frame = { $$eval: async () => [{ texto: 'outra loja', visivel: true }] };
+  await chat7.abrirConversa('山王电玩').catch((e) => { msg = e.message; });
+  t('título que não existe na lista dá erro claro', /não está na lista/.test(msg), msg);
 
   // ── A caixa certa é a que CONTÉM mensagens ─────────────────
   //

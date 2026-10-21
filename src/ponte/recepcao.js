@@ -319,7 +319,7 @@ function avaliar(from, texto, imagem) {
   // "obrigado" viraria login de conta.
   const guiado = guardado?.etapa === 'usuario';
   const usuario =
-    v.valido && (temMisturaLetraDigito || guiado)
+    v.valido && (temMisturaLetraDigito || guiado || bruto.includes('@'))
       ? v.usuario
       : codigo.extrairUsuario(bruto);
 

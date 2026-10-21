@@ -27,6 +27,7 @@
   },
 
   "conversaNaLista": {
+    "_atualizado": "O braço abre a conversa PELO TÍTULO (lista.js): lê o texto de cada item destes candidatos e clica no que contém o título; rola a lista se não achar. Só cai no primeiro item se chamado sem título.",
     "_o_que_e": "PRIMEIRO item da lista lateral. O fornecedor fica sempre no topo por ser a conversa mais recente. Clicar por posição não depende de casar texto chinês. O título é conferido DEPOIS de abrir, no chat.js — se outra loja tiver subido para o topo, o braço para em vez de escrever no lugar errado.",
     "candidatos": [
       ".conversation-item",

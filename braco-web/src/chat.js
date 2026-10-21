@@ -22,6 +22,7 @@ const path = require('path');
 const { execFile, spawn } = require('child_process');
 const frameHelper = require('./frame');
 const humaniza = require('./humaniza');
+const { escolherConversa } = require('./lista');
 
 const rodar = (cmd, args) =>
   new Promise((ok, erro) =>
@@ -310,27 +311,140 @@ class Chat {
   // ----------------------------------------------------------
 
   /**
-   * Abre a conversa do fornecedor.
+   * Lê os itens da lista lateral de conversas: texto e se estão na vista.
+   * Devolve { sel, itens } do primeiro seletor candidato que existir.
+   */
+  async _lerListaDeConversas() {
+    for (const sel of SEL.conversaNaLista.candidatos) {
+      const itens = await this.frame
+        .$$eval(sel, (els) =>
+          els.map((el) => {
+            const r = el.getBoundingClientRect();
+            return { texto: el.innerText || '', visivel: r.width > 0 && r.height > 0 };
+          }),
+        )
+        .catch(() => []);
+      if (itens.length) return { sel, itens };
+    }
+    return { sel: null, itens: [] };
+  }
+
+  /**
+   * Rola a lista lateral uma "página" (ou volta ao topo). Devolve true se a
+   * posição mudou. A lista é rc-scrollbars e virtualizada: ignora scrollTop
+   * escrito de fora com frequência, então cai para a roda do mouse (que passa
+   * pelo handler do componente) — mesmo remédio de _rolarUmaTela().
+   */
+  async _rolarListaDeConversas(sel, { paraOTopo = false } = {}) {
+    const antes = await this.frame
+      .evaluate(
+        ({ sel, paraOTopo }) => {
+          const item = document.querySelector(sel);
+          let c = item && item.parentElement;
+          while (c && c !== document.body && c.scrollHeight <= c.clientHeight + 4) c = c.parentElement;
+          if (!c || c === document.body) return null;
+          const antes = c.scrollTop;
+          c.scrollTop = paraOTopo ? 0 : antes + Math.max(80, c.clientHeight * 0.8);
+          const r = c.getBoundingClientRect();
+          return { antes, depois: c.scrollTop, x: r.left + r.width / 2, y: r.top + r.height / 2, h: c.clientHeight };
+        },
+        { sel, paraOTopo },
+      )
+      .catch(() => null);
+    if (!antes) return false;
+    if (antes.depois !== antes.antes) return true;
+    if (paraOTopo) return false;
+
+    // scrollTop ignorado: tenta a roda do mouse sobre a lista.
+    try {
+      const box = await this.frame.frameElement().then((f) => f.boundingBox()).catch(() => null);
+      const x = (box?.x || 0) + antes.x;
+      const y = (box?.y || 0) + antes.y;
+      await this.pagina.mouse.move(x, y);
+      await this.pagina.mouse.wheel(0, Math.max(120, antes.h * 0.8));
+      await this.pagina.waitForTimeout(humaniza.ms(400, 800));
+    } catch {
+      return false;
+    }
+    const depois = await this.frame
+      .evaluate((sel) => {
+        const item = document.querySelector(sel);
+        let c = item && item.parentElement;
+        while (c && c !== document.body && c.scrollHeight <= c.clientHeight + 4) c = c.parentElement;
+        return c && c !== document.body ? c.scrollTop : null;
+      }, sel)
+      .catch(() => null);
+    return depois !== null && depois !== antes.antes;
+  }
+
+  /**
+   * Acha o item da conversa `titulo` na lista lateral, rolando se preciso.
+   * Devolve o locator do item (já na vista) ou lança erro claro.
+   */
+  async _acharItemDaConversa(titulo) {
+    const tentar = async () => {
+      const { sel, itens } = await this._lerListaDeConversas();
+      const i = escolherConversa(itens, titulo);
+      return i < 0 ? null : { sel, i, visivel: itens[i].visivel };
+    };
+
+    let achou = await tentar();
+
+    if (!achou) {
+      // Não está na vista: volta ao topo e desce página a página. O teto evita
+      // laço eterno numa lista que nunca acaba de carregar.
+      const { sel } = await this._lerListaDeConversas();
+      if (sel) {
+        await this._rolarListaDeConversas(sel, { paraOTopo: true });
+        await this.pagina.waitForTimeout(humaniza.ms(300, 700));
+        achou = await tentar();
+        for (let n = 0; !achou && n < 25; n++) {
+          if (!(await this._rolarListaDeConversas(sel))) break; // chegou ao fim
+          await this.pagina.waitForTimeout(humaniza.ms(300, 700));
+          achou = await tentar();
+        }
+      }
+    }
+
+    if (!achou) {
+      const { itens } = await this._lerListaDeConversas();
+      const vistos = itens
+        .slice(0, 8)
+        .map((x) => JSON.stringify(String(x.texto).split('\n')[0].slice(0, 20)))
+        .join(', ');
+      throw new SeletorNaoEncontrado(
+        `Conversa "${titulo}" não está na lista (nem rolando). ` +
+          `Vi ${itens.length} item(ns): ${vistos || 'nenhum'}. ` +
+          `NÃO enviei nada para não escrever na loja errada.`,
+      );
+    }
+
+    const loc = this.frame.locator(achou.sel).nth(achou.i);
+    if (!achou.visivel) await loc.scrollIntoViewIfNeeded({ timeout: 5000 }).catch(() => {});
+    return loc;
+  }
+
+  /**
+   * Abre a conversa do fornecedor PELO TÍTULO.
    *
    * O chat é uma SPA: trocar de conversa não muda a URL, então não dá para
    * navegar direto — tem que clicar no item da lista.
    *
-   * Clica no PRIMEIRO da lista, não no que casa com o título. O fornecedor
-   * fica sempre no topo por ser a conversa mais recente, e clicar por posição
-   * não depende de casar texto chinês (que quebra se a loja mudar de nome ou
-   * o seletor `:has-text` falhar).
-   *
-   * MAS confere o título depois de abrir. Se outro fornecedor mandar mensagem,
-   * ele pula para o topo — e sem essa conferência o braço mandaria o usuário
-   * de um cliente para a loja errada. Posição para clicar, título para
-   * confirmar.
+   * Antes clicava no PRIMEIRO item (o mais recente) e só conferia o título
+   * depois. Quando OUTRA loja mandava mensagem, a conversa dela subia ao topo,
+   * a conferência falhava e o sistema parava por horas. Agora o item é
+   * escolhido pelo texto (lista.js), rolando a lista se ele não estiver à
+   * vista, e a conferência do título continua DEPOIS de abrir: título para
+   * achar, título para confirmar. Sem título (chamada antiga) cai no primeiro.
    */
   async abrirConversa(titulo) {
     await this.prender();
     await this.checarBloqueio();
 
+    // Espera a lista existir antes de ler (mesmo teto do clique antigo).
     const primeiro = await this._achar('conversaNaLista', { timeout: 12000 });
-    await this._clicar(primeiro.el, { timeout: 10000 });
+    const alvo = titulo ? await this._acharItemDaConversa(titulo) : primeiro.el;
+    await this._clicar(alvo, { timeout: 10000 });
     await this.pagina.waitForTimeout(humaniza.ms(900, 2000));
 
     // Painel de digitação carregado = conversa aberta de verdade.
@@ -342,8 +456,7 @@ class Chat {
         .catch(() => '');
       if (!abriu.includes(titulo)) {
         throw new SeletorNaoEncontrado(
-          `Abri a primeira conversa da lista, mas ela não é "${titulo}". ` +
-            `Provavelmente outro fornecedor mandou mensagem e subiu para o topo. ` +
+          `Cliquei na conversa de "${titulo}" mas a tela aberta não mostra esse título. ` +
             `NÃO enviei nada para não escrever na loja errada.`,
         );
       }

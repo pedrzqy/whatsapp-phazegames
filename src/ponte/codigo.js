@@ -57,6 +57,7 @@ const RUIDO = [
  * 394860" pode ser o próprio código e precisa de um humano olhando.
  */
 const ESPERA = /稍等|稍后|等一下|等下|等一会|等会|请等|等等|马上|一会儿?|耐心等|正在(处理|弄|查|发|看)|在(弄|查|处理)|我看(一)?下|查(一)?下|处理中|别急/;
+const roteamento = require('./roteamento');
 const TEM_NUMERO = /\d{4,}/;
 
 /**
@@ -180,6 +181,12 @@ function validarUsuario(texto) {
 
   if (!bruto) {
     return { valido: false, usuario: null, motivo: 'vazio' };
+  }
+  // E-mail de um domínio que SÓ o fornecedor 2 atende (ex.: @exctp.com): é o
+  // login dessas contas e vale inteiro. Qualquer outro e-mail continua
+  // rejeitado logo abaixo (cliente mandando o e-mail PESSOAL por engano).
+  if (/^[A-Za-z0-9._+-]{1,40}@[A-Za-z0-9.-]+$/.test(bruto) && roteamento.ehDoFornecedor2(bruto)) {
+    return { valido: true, usuario: bruto, motivo: null };
   }
   if (bruto.length > 20) {
     return { valido: false, usuario: null, motivo: 'passa de 20 caracteres' };

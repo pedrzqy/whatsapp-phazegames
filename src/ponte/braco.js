@@ -67,7 +67,8 @@ router.get('/estado', (_req, res) => {
     esperaMinutos: j.esperaMinutos,
     disjuntor: d.estado,
     motivoDisjuntor: d.motivo,
-    chatTitulo: cfg.vendedor.chatTitulo,
+    // A conversa da vez (dois fornecedores: ver roteamento.js). Ocioso = principal.
+    chatTitulo: ponte.chatTituloAtual(),
     // Só faz sentido ler o chat se alguém está esperando resposta.
     temAtendimentoAtivo: Boolean(fila.ativo()),
     // De QUEM é a vez. O braço só lê com a marca desse mesmo atendimento.
@@ -247,6 +248,7 @@ router.post('/entrada', async (req, res) => {
       await ponte.receberDoFornecedor({
         texto,
         printPath: m.printPath,
+        chatTitulo: req.body?.chatTitulo || null,
         atendimentoId: req.body?.atendimentoId || null,
       });
     } catch (err) {
