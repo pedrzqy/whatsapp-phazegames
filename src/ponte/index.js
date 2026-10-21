@@ -1761,9 +1761,18 @@ const VARIANTES_DESCULPA_EXPIROU = [
 
 async function tick() {
   try {
-    await vigiarColeta();
-    await vigiarCongelamento();
-    await require('./alertaGrupo').vigiar();
+    // Cada vigia isolado: um que quebra ou engasga (alerta preso no WhatsApp)
+    // não pode levar junto a EXPIRAÇÃO logo abaixo. Era assim que a fila
+    // ficava parada para sempre: o tick morria no primeiro vigia e ninguém
+    // mais expirava o atendimento da vez, nem o site nem o WhatsApp.
+    const vigias = [vigiarColeta, vigiarCongelamento, () => require('./alertaGrupo').vigiar()];
+    for (const v of vigias) {
+      try {
+        await Promise.race([v(), new Promise((r) => setTimeout(r, 30 * 1000).unref())]);
+      } catch (err) {
+        console.error('[ponte/tick] vigia falhou:', err.message);
+      }
+    }
 
     // Congelado, ninguém expira: o cliente não está sem resposta por culpa
     // dele nem do outro lado, e o prazo é empurrado quando os envios voltam.
@@ -1774,13 +1783,25 @@ async function tick() {
       // expira aqui sempre esperou por nós; o `usuario` fica como trava.
       // Congelado nem entra neste laço (acima), mas a checagem fica explícita.
       const desculpa = Boolean(v.usuario) && limites.disjuntor().estado !== 'aberto';
-      await humaniza.enviar(
-        v.from,
-        desculpa
-          ? variantes.escolher('desculpa_expirou', VARIANTES_DESCULPA_EXPIROU, v.from)
-          : variantes.escolher('expirou_padrao', VARIANTES_EXPIROU_PADRAO, v.from),
-      );
-      await alertar(`⏱️ Atendimento de *${v.nome}* (\`${v.usuario}\`) expirou sem código.`);
+      // O atendimento já foi encerrado acima; aviso que falha ou demora não
+      // pode segurar o promoverProximo de quem está atrás.
+      const prazo = new Promise((r) => setTimeout(r, 30 * 1000).unref());
+      try {
+        await Promise.race([
+          (async () => {
+            await humaniza.enviar(
+              v.from,
+              desculpa
+                ? variantes.escolher('desculpa_expirou', VARIANTES_DESCULPA_EXPIROU, v.from)
+                : variantes.escolher('expirou_padrao', VARIANTES_EXPIROU_PADRAO, v.from),
+            );
+            await alertar(`⏱️ Atendimento de *${v.nome}* (\`${v.usuario}\`) expirou sem código.`);
+          })(),
+          prazo,
+        ]);
+      } catch (err) {
+        console.error('[ponte/tick] aviso de expiração falhou:', err.message);
+      }
     }
     // Fila vazia com gente parada na entrada: ninguém ia chamá-los (o gancho
     // só roda quando um atendimento encerra), e a posição ficava inflada por

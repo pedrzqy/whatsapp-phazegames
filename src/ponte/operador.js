@@ -1000,7 +1000,10 @@ async function executar(texto, de = '', ctx = {}) {
     // segunda: respondia "já está tudo vazio" com cliente esperando.
     const recepcao = require('./recepcao');
     const naEntrada = recepcao.esperandoVez();
-    const presos = (s.ativo ? 1 : 0) + s.aguardando.length + naEntrada.length;
+    // Conta os atendimentos ABERTOS de verdade (a foto da situacao() mostra um
+    // só ativo): é a mesma conta do "Fila agora" do site.
+    const abertosN = dados.atendimentos.filter((a) => a.estado === 'ativo' || a.estado === 'aguardando').length;
+    const presos = Math.max(abertosN, (s.ativo ? 1 : 0) + s.aguardando.length) + naEntrada.length;
 
     if (!tudo) {
       if (!tarefas && !respostas) {
@@ -1027,35 +1030,35 @@ async function executar(texto, de = '', ctx = {}) {
     // ── #limpar fila ──
     if (!presos && !tarefas && !respostas) return 'Já está tudo vazio.';
 
-    const avisoEntrada =
+    const aviso =
       'Não consegui pegar seu código agora 🙏\n\n' +
       'Digita *#inicio* e pede de novo que eu resolvo.';
-    const daEntrada = recepcao.limparEspera();
-    for (const from of daEntrada) {
-      await sender.send(from, avisoEntrada).catch(() => {});
-    }
 
-    const paraAvisar = [s.ativo, ...s.aguardando].filter(Boolean);
-    for (const a of paraAvisar) {
-      const at = fila.porId(a.id);
-      if (!at?.from) continue;
-      // Avisa ANTES de encerrar: depois o atendimento não existe mais e o
-      // número se perde junto.
-      //
-      // Duas linhas e uma instrução só. A versão anterior mandava o cliente
-      // responder "preciso do código" — uma frase que ele tem que reconstruir
-      // do zero, e que o dono achou confusa lendo do lado de fora. `#inicio` é
-      // a palavra que já aparece no rodapé de metade das mensagens do bot: ele
-      // não precisa entender nada, só repetir o que já viu.
-      await sender
-        .send(
-          at.from,
-          'Não consegui pegar seu código agora 🙏\n\n' +
-            'Digita *#inicio* e pede de novo que eu resolvo.',
-        )
-        .catch(() => {});
-      await fila.concluir(at.id, 'limpeza_operador');
+    // ENCERRA PRIMEIRO, AVISA DEPOIS.
+    //
+    // Antes cada cliente era avisado ANTES de ser encerrado (para não perder o
+    // número). Só que o aviso é um envio pela rede: se o WhatsApp engasga ou
+    // demora, o laço fica preso no primeiro `send` e a fila inteira continua
+    // exatamente como estava — o operador mandava #limpar fila e nada mudava.
+    // Agora o número é guardado antes, tudo é encerrado sem esperar rede
+    // nenhuma, e só então os avisos saem (cada um com prazo).
+    const daEntrada = recepcao.limparEspera();
+
+    // Varre os atendimentos ABERTOS de verdade, não a foto da situacao(): ela
+    // só mostra UM ativo e pula quem não tem número. Atendimento esquecido
+    // fora da foto era justamente o que ficava na fila para sempre.
+    const abertos = dados.atendimentos.filter((a) => a.estado === 'ativo' || a.estado === 'aguardando');
+    const paraAvisar = [];
+    for (const a of abertos) {
+      if (a.from) paraAvisar.push(a.from);
+      await fila.concluir(a.id, 'limpeza_operador');
     }
+    const comPrazo = (p) => Promise.race([p, new Promise((r) => setTimeout(r, 8000).unref())]);
+    for (const from of [...daEntrada, ...paraAvisar]) {
+      await comPrazo(Promise.resolve(sender.send(from, aviso)).catch(() => {}));
+    }
+    const pessoas = daEntrada.length + paraAvisar.length;
+    const noSite = [...daEntrada, ...paraAvisar].filter((f) => String(f).startsWith('web:')).length;
 
     dados.tarefas = dados.tarefas.filter(
       (t) => t.estado !== 'aguardando_aprovacao' && t.estado !== 'pendente' && t.estado !== 'executando',
@@ -1065,8 +1068,9 @@ async function executar(texto, de = '', ctx = {}) {
 
     return (
       `🧹 *Fila limpa.*\n\n` +
-      `${paraAvisar.length + daEntrada.length} cliente(s) encerrado(s) e avisado(s)` +
+      `${pessoas} cliente(s) encerrado(s) e avisado(s)` +
       (daEntrada.length ? ` (${daEntrada.length} esperando na entrada)` : '') +
+      (noSite ? ` (${noSite} pelo site: a página deles já mostra que podem pedir de novo)` : '') +
       '.\n' +
       `${tarefas} envio(s) e ${respostas} resposta(s) descartados.`
     );

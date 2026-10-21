@@ -155,6 +155,19 @@ function situacao(id) {
   if (at.estado === 'ativo') return { ...base, estado: 'ativo' };
   if (at.codigo) return { ...base, estado: 'concluido', codigo: at.codigo };
   if (at.estado === 'expirado') return { ...base, estado: 'expirado' };
+  // O operador limpou a fila (#limpar fila): a página sai da tela de fila e
+  // mostra o aviso com o caminho para pedir de novo, o mesmo de quem expirou.
+  // Sem isto ela caía no "concluído sem código" e dependia de a mensagem ter
+  // chegado a tempo para não mostrar uma tela vazia.
+  if (at.motivoFim === 'limpeza_operador') {
+    return {
+      ...base,
+      estado: 'expirado',
+      mensagens: base.mensagens.some((m) => m.em >= (at.concluidoEm || 0) - 60 * 1000)
+        ? base.mensagens
+        : [...base.mensagens, { texto: 'Não consegui pegar seu código agora. Toque em *Pedir outro código* que eu resolvo.', em: Date.now() }],
+    };
+  }
 
   // Concluído sem código e sem nenhuma palavra no fim (o #pular, por exemplo):
   // sem esta linha a tela diria "leia a mensagem abaixo" em cima de nada. O

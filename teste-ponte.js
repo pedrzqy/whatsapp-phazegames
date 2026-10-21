@@ -1426,6 +1426,39 @@ const OP = '5541999999999';
     t('de novo, aí sim está vazio', /Já está tudo vazio/.test(de), de);
   }
 
+  // Bug real (site do código): "Fila agora: 3" e o #limpar fila não mexia. O
+  // aviso era enviado ANTES de encerrar, então um envio engasgado travava o
+  // laço inteiro; e um segundo 'ativo' fora da foto da situacao() nunca saía.
+  bloco('#limpar fila encerra até com envio travado e ativo escondido');
+  {
+    const webMod = require('./src/ponte/web');
+    estadoPonte.dados.atendimentos = [];
+    estadoPonte.dados.pendentes = {};
+    estadoPonte.dados.tarefas = [];
+    const ids = ['web:' + 'a'.repeat(24), 'web:' + 'b'.repeat(24), 'web:' + 'c'.repeat(24)];
+    for (const id of ids) await filaMod.entrar(id, 'Site');
+    // Segundo ativo escondido (estado antigo do disco / promoção dupla).
+    estadoPonte.dados.atendimentos.push({
+      id: 'esc1', from: '5511933330001', nome: 'Escondido', estado: 'ativo', posicao: 99,
+      turnos: 0, criadoEm: Date.now(), iniciadoEm: Date.now(), expiraEm: Date.now() + 1e6, historico: [],
+    });
+    const sr3 = require('./src/sender').send;
+    // WhatsApp que nunca responde: não pode impedir o encerramento.
+    require('./src/sender').send = (para) => (String(para).startsWith('web:') ? Promise.resolve(true) : new Promise(() => {}));
+    const inicio = Date.now();
+    const r = await operador.executar('#limpar fila', OP);
+    require('./src/sender').send = sr3;
+    const abertos = estadoPonte.dados.atendimentos.filter((a) => a.estado === 'ativo' || a.estado === 'aguardando');
+    t('nenhum atendimento aberto sobra', abertos.length === 0, String(abertos.length));
+    t('conta o escondido também (4)', /4 cliente/.test(r), r);
+    t('avisa que 3 eram do site', /3 pelo site/.test(r), r);
+    t('o envio travado não prende o comando', Date.now() - inicio < 15000, `${Date.now() - inicio} ms`);
+    const sit = webMod.situacao(ids[2]);
+    t('a página do site sai da fila (expirado)', sit.estado === 'expirado', sit.estado);
+    t('  e diz como pedir de novo', sit.mensagens.some((m) => /Pedir outro código/.test(m.texto)));
+    t('a espera do site zera', filaMod.situacao().aguardando.length === 0 && !filaMod.situacao().ativo);
+  }
+
   // O que o cliente LÊ. É a mensagem que ele recebe do nada, sem ter feito
   // nada errado, e o dono leu a versão anterior de fora e não entendeu: ela
   // pedia para responder "preciso do código", uma frase que o cliente tem que
