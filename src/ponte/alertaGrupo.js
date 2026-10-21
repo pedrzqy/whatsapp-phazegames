@@ -135,4 +135,4 @@ async function vigiar() {
   }
 }
 
-module.exports = { bloqueio, vigiar, clientesEsperando };
+module.exports = { bloqueio, vigiar, clientesEsperando, enviar };

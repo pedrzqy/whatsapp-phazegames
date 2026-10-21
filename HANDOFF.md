@@ -252,6 +252,7 @@ arquivo de estado novo — quatro já honram.
 - `src/ponte/roteamento.js` decide a conversa pelo dominio do login: `PONTE_SELLER2_DOMINIOS` (padrao `exctp.com`) vai para `PONTE_SELLER2_CHAT_TITLE` (padrao `百汇游戏店`); o resto para `PONTE_SELLER_CHAT_TITLE`. Env no Easypanel vence o padrao.
 - A tarefa carrega `chatTitulo`; `/estado` devolve a conversa da vez (fila serial = so uma por vez); o braco abre a conversa PELO TITULO (`braco-web/src/lista.js`, rola a lista se preciso) e manda `chatTitulo` no `/entrada`; o bot descarta resposta de conversa que nao e a do login da vez.
 - Antes o braco clicava no 1o item da lista: outra loja escrevendo congelava tudo. Nao ha mais isso.
+- Erro simples (`src/ponte/erroSimples.js`, `PONTE_ERRO_SIMPLES`, padrao ligado): mensagem sem codigo que a IA classifica como `foto_errada` ou `login_errado` (confianca media/alta) vira texto FIXO ao cliente, a vez e liberada e ele volta ao passo da foto/login (`recepcao.reabrirEtapa`); 2 avisos por erro/cliente, na 3a escala ao operador; IA com erro = `outro` (caminho antigo). Operador e grupo STAFF recebem aviso curto.
 - Limites por hora (braco `ENVIO_POR_HORA`) e disjuntor continuam GLOBAIS. Deploy dos DOIS servicos.
 
 ## 8 · Pendências

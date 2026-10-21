@@ -3941,6 +3941,159 @@ const OP = '5541999999999';
     estadoPonte.dados.tarefas = [];
   }
 
+  // ── Erro simples do outro lado: a IA classifica, o texto e fixo ──
+  bloco('erro simples: foto errada / login errado');
+  {
+    const filaMod = require('./src/ponte/fila');
+    const aiE = require('./src/ai');
+    const senderE = require('./src/sender');
+    const erroMod = require('./src/ponte/erroSimples');
+    const politicaMod = require('./src/ponte/politica');
+    const limitesMod = require('./src/ponte/limites');
+    const dd = estadoPonte.dados;
+    const antesChat = aiE.chat;
+    const antesSend = senderE.send;
+    let saiu = [];
+    senderE.send = async (para, txt) => { saiu.push({ para, texto: String(txt) }); };
+    let resposta = null; // string = conteudo; Error = lanca
+    let chamadas = 0;
+    aiE.chat = async () => {
+      chamadas++;
+      if (resposta instanceof Error) throw resposta;
+      return { content: resposta };
+    };
+    const json = (categoria, confianca = 'alta') => JSON.stringify({ categoria, confianca });
+    let seq = 0;
+    const FORB = /taobao|china|chin[eê]s|fornecedor|vendedor|vendedora|origem|vou ver|estou verificando|j[aá] vejo/i;
+
+    const novo = async (tel = `55419888${String(7000 + (++seq))}`) => {
+      limitesMod.fechar('teste');
+      dd.coletaVistaEm = Date.now();
+      dd.atendimentos = [];
+      dd.tarefas = [];
+      dd.aprovacoes = [];
+      dd.pendentes = {};
+      saiu = [];
+      const r = await filaMod.entrar(tel, 'Erro');
+      r.atendimento.usuario = 'errs1234';
+      dd.tarefas.push({
+        id: `TE${seq}`, atendimentoId: r.atendimento.id, tipo: 'pedir_codigo', usuario: 'errs1234',
+        imagemPath: '/tmp/print-erro.jpg', estado: 'concluido', tentativas: 1, agendadaPara: 0,
+      });
+      return { tel, at: r.atendimento };
+    };
+    const esperar = () => new Promise((r) => setTimeout(r, 20));
+    const aoCliente = (tel) => saiu.filter((x) => x.para === tel);
+    const autoMsg = (tel) => aoCliente(tel).filter((x) => [...erroMod.VARIANTES.foto_errada, ...erroMod.VARIANTES.login_errado].some((v) => x.texto.includes(v.split(String.fromCharCode(10))[0])));
+    const aoOper = () => saiu.filter((x) => x.para === OP);
+
+    try {
+      // foto_errada
+      let { tel, at } = await novo();
+      resposta = json('foto_errada');
+      await ponteMod.receberDoFornecedor({ texto: '截图不对，请重新发一下' });
+      await esperar();
+      let msgs = aoCliente(tel);
+      t('foto_errada: o cliente recebe UMA explicacao fixa', msgs.length === 1 && /foto|print|imagem/i.test(msgs[0].texto), JSON.stringify(msgs));
+      t('  sem palavra proibida nem tom de pessoa', !FORB.test(msgs[0]?.texto || '') && !politicaMod.temCJK(msgs[0]?.texto || ''));
+      t('  a vez e liberada', filaMod.ativo() === null && filaMod.porId(at.id).estado === 'concluido');
+      t('  o cliente volta para o passo da foto, com o login guardado',
+        dd.pendentes[tel]?.etapa === 'foto' && dd.pendentes[tel]?.usuario === 'errs1234', JSON.stringify(dd.pendentes[tel]));
+      t('  o operador e avisado, sem alerta de aprovacao', aoOper().some((x) => /foto/.test(x.texto)) && dd.aprovacoes.length === 0);
+
+      // login_errado
+      ({ tel, at } = await novo());
+      resposta = json('login_errado');
+      await ponteMod.receberDoFornecedor({ texto: '这个账号不存在，请核对' });
+      await esperar();
+      msgs = aoCliente(tel);
+      t('login_errado: o cliente recebe a explicacao do login', msgs.length === 1 && /login/i.test(msgs[0].texto), JSON.stringify(msgs));
+      t('  sem palavra proibida', !FORB.test(msgs[0]?.texto || ''));
+      t('  volta para o passo do login, com a foto guardada',
+        dd.pendentes[tel]?.etapa === 'usuario' && dd.pendentes[tel]?.imagem === '/tmp/print-erro.jpg', JSON.stringify(dd.pendentes[tel]));
+
+      // outro = comportamento de sempre
+      ({ tel, at } = await novo());
+      resposta = json('outro');
+      await ponteMod.receberDoFornecedor({ texto: '这个账号不存在，请核对' });
+      await esperar();
+      t('outro: nada para o cliente e vira aprovacao do operador', autoMsg(tel).length === 0 && dd.aprovacoes.length === 1);
+
+      // confianca baixa = outro
+      ({ tel, at } = await novo());
+      resposta = json('foto_errada', 'baixa');
+      await ponteMod.receberDoFornecedor({ texto: '这个账号不存在，请核对' });
+      await esperar();
+      t('confianca baixa nao age sozinha', autoMsg(tel).length === 0 && dd.aprovacoes.length === 1);
+
+      // falha segura: erro, lixo, categoria inventada
+      for (const [nome, r] of [['IA lanca erro', new Error('caiu')], ['resposta nao-JSON', 'não sei'], ['categoria inventada', json('reembolso')]]) {
+        ({ tel, at } = await novo());
+        resposta = r;
+        await ponteMod.receberDoFornecedor({ texto: '这个账号不存在，请核对' });
+        await esperar();
+        t(`falha segura (${nome}): cai no operador`, autoMsg(tel).length === 0 && dd.aprovacoes.length === 1);
+      }
+      resposta = new Error('x');
+      const c1 = await erroMod.classificar('qualquer');
+      t('classificar nunca lanca e devolve outro', c1.categoria === 'outro');
+
+      // 2 avisos no maximo: a terceira vez escala
+      ({ tel, at } = await novo());
+      resposta = json('foto_errada');
+      const passos = [];
+      for (let i = 0; i < 3; i++) {
+        if (i > 0) {
+          // O cliente reenviou e o pedido voltou a ser a vez dele.
+          dd.atendimentos = [];
+          dd.tarefas = [];
+          const r = await filaMod.entrar(tel, 'Erro');
+          r.atendimento.usuario = 'errs1234';
+          dd.tarefas.push({ id: `TE9${i}`, atendimentoId: r.atendimento.id, tipo: 'pedir_codigo', usuario: 'errs1234', imagemPath: '/tmp/print-erro.jpg', estado: 'concluido', tentativas: 1, agendadaPara: 0 });
+        }
+        saiu = [];
+        dd.aprovacoes = [];
+        await ponteMod.receberDoFornecedor({ texto: '截图不对，请重新发一下' });
+        await esperar();
+        passos.push({ cliente: autoMsg(tel).length, aprov: dd.aprovacoes.length });
+      }
+      t('mesmo erro: avisa 2 vezes e na 3a escala para o operador',
+        passos[0].cliente === 1 && passos[1].cliente === 1 && passos[2].cliente === 0 && passos[2].aprov === 1, JSON.stringify(passos));
+
+      // codigo entregue zera a contagem
+      erroMod.limpar(tel);
+      t('limpar zera a contagem do cliente', !dd.errosSimples?.[tel]);
+
+      // Textos fixos
+      const todos = [...erroMod.VARIANTES.foto_errada, ...erroMod.VARIANTES.login_errado];
+      t('3 variantes por categoria', erroMod.VARIANTES.foto_errada.length === 3 && erroMod.VARIANTES.login_errado.length === 3);
+      t('nenhuma variante tem palavra proibida, CJK ou tom de pessoa', todos.every((x) => !FORB.test(x) && !politicaMod.temCJK(x)));
+      t('2 a 3 emojis em cada variante, no fim de linha',
+        todos.every((x) => {
+          const n = (x.match(/\p{Extended_Pictographic}/gu) || []).length;
+          return n >= 2 && n <= 4 && x.split('\n').filter(Boolean).every((l) => /\p{Extended_Pictographic}\uFE0F?$/u.test(l.trim()));
+        }));
+
+      // Desligado por env
+      const cfgE = require('./src/ponte/config');
+      cfgE.erroSimples = false;
+      ({ tel, at } = await novo());
+      resposta = json('foto_errada');
+      const antesChamadas = chamadas;
+      await ponteMod.receberDoFornecedor({ texto: '这个账号不存在，请核对' });
+      await esperar();
+      t('PONTE_ERRO_SIMPLES=false: tudo vai para o operador', autoMsg(tel).length === 0 && dd.aprovacoes.length === 1);
+      cfgE.erroSimples = true;
+    } finally {
+      aiE.chat = antesChat;
+      senderE.send = antesSend;
+      dd.atendimentos = [];
+      dd.tarefas = [];
+      dd.aprovacoes = [];
+      dd.pendentes = {};
+    }
+  }
+
   // ── Pós-código: vídeo de instalação + pedido de avaliação ──
   bloco('pos-codigo: video de instalacao e pedido de avaliacao');
   {

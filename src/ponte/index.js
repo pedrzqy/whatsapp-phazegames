@@ -39,6 +39,7 @@ const sender = require('../sender');
 const humaniza = require('./humaniza');
 const variantes = require('./variantes');
 const roteamento = require('./roteamento');
+const erroSimples = require('./erroSimples');
 
 async function alertar(texto, imagem, nomeArquivo) {
   if (!cfg.operador.numeros.length) {
@@ -693,6 +694,26 @@ async function receberDoFornecedor(entrada) {
   const respondeu = await tentarResponder(at, entrada.texto);
   if (respondeu) return;
 
+  // Erro simples que o cliente resolve (foto errada / login errado): a IA só
+  // classifica e o texto é fixo. Falha ou dúvida = segue para o operador.
+  if (c.tipo === 'problema' && !entrada.texto.startsWith('[respondeu com')) {
+    const resolveu = await erroSimples.tratar(at, entrada.texto, {
+      escolher: variantes.escolher,
+      enviar: (para, txt) => humaniza.enviar(para, marca.assinarSimples(txt)),
+      concluir: (id, motivo) => fila.concluir(id, motivo),
+      promover: promoverProximo,
+      avisar: async (txt) => {
+        await alertar(txt);
+        await require('./alertaGrupo').enviar(txt).catch(() => {});
+      },
+      reabrir: (from, estado) => require('./recepcao').reabrirEtapa(from, estado),
+      imagemDoPedido: (a) =>
+        dados.tarefas.find((x) => x.atendimentoId === a.id && x.tipo === 'pedir_codigo' && x.imagemPath)
+          ?.imagemPath || null,
+    });
+    if (resolveu) return;
+  }
+
   // Não é código: é problema. Traduz só para o operador entender e decidir.
   //
   // Marcador sintético do braço ("respondeu com uma imagem") já vem em
@@ -1025,6 +1046,7 @@ async function entregarCodigo(atendimento, cod) {
   // Só chega aqui se o envio acima não lançou. Sem await: não segura a fila.
   require('./tutorial').agendar(atendimento);
 
+  erroSimples.limpar(atendimento.from);
   await fila.concluir(atendimento.id, 'codigo_entregue');
   await promoverProximo();
 }

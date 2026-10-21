@@ -624,6 +624,16 @@ function abrirJanela(from) {
   persist();
 }
 
+/**
+ * Devolve o cliente a um passo do fluxo (usado quando o outro lado recusou a
+ * foto ou o login: ele refaz SÓ essa metade, a outra fica guardada).
+ */
+function reabrirEtapa(from, { usuario = null, imagem = null, etapa }) {
+  const p = pendentes();
+  p[from] = { usuario, imagem, etapa, em: Date.now() };
+  persist();
+}
+
 /** Quantos pedidos estão pela metade agora (para o #fila). */
 function emEspera() {
   limparVencidos();
@@ -647,7 +657,7 @@ function emEspera() {
 }
 
 module.exports = {
-  avaliar, abrirJanela, iniciarFluxo, emEspera, pedeCodigo, VALIDADE_MS,
+  avaliar, abrirJanela, iniciarFluxo, reabrirEtapa, emEspera, pedeCodigo, VALIDADE_MS,
   // A outra metade da fila: quem foi barrado na entrada e ainda nao entregou
   // nada. Quem chama e o promoverProximo do index.js, no mesmo gancho que ja
   // avisava a vez de quem esta na fila.

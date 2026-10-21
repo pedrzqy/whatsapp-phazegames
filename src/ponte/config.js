@@ -84,6 +84,11 @@ module.exports = {
   // algo sair sem gente.
   repertorioLigado: process.env.PONTE_REPERTORIO === 'true',
 
+  // Erro simples do outro lado (foto errada / login errado) explicado ao
+  // cliente sozinho, com texto fixo — a IA só classifica. Ver erroSimples.js.
+  // PONTE_ERRO_SIMPLES=false volta tudo para o operador.
+  erroSimples: process.env.PONTE_ERRO_SIMPLES !== 'false',
+
   limites: {
     // Camada 1 — anti-flood por cliente.
     clientePorHora: num(process.env.PONTE_LIM_CLIENTE_HORA, 5),
