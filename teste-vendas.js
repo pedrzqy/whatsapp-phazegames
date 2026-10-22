@@ -1294,6 +1294,7 @@ const CLI = '5541999998888';
     };
     cfgJ.enabled = true; cfgJ.dryRun = false; cfgJ.groupJid = '120363000000000077@g.us';
     cfgJ.portaoLigado = false; cfgJ.saudacoesLigadas = false;
+    const afilOriginal = cfgJ.afiliadosLigado; cfgJ.afiliadosLigado = false; // estes cenários testam só a agenda normal
     cfgJ.schedule = [{ key: 'coupon', everyDays: 1, hour: 17 }, { key: 'bestsellers', everyDays: 1, hour: 17 }];
     const dia = '2031-03-10';
     const st = com._estado();
@@ -1343,9 +1344,138 @@ const CLI = '5541999998888';
     t('grupo fechado pelo horário: não anuncia', enviadas.length === 0, String(enviadas.length));
     chavesJ.ligada = ligadaSalva; evoJ.portaoDoGrupo = portaoSalvo;
 
+    // ── Aviso diário de afiliados (vídeo + legenda, janela da tarde) ──
+    {
+      const salvoA = { lig: cfgJ.afiliadosLigado, ini: cfgJ.afiliadosInicioMin, fim: cfgJ.afiliadosFimMin, dry: cfgJ.dryRun };
+      cfgJ.afiliadosLigado = true; cfgJ.afiliadosInicioMin = 14 * 60; cfgJ.afiliadosFimMin = 17 * 60 + 30;
+      cfgJ.portaoLigado = false; cfgJ.saudacoesLigadas = false; cfgJ.schedule = []; cfgJ.dryRun = false;
+      const stA = com._estado();
+      stA.slots = {}; stA.lastPostAt = {}; stA.ultimoPostGrupo = 0; stA.textoUlt = {}; stA.jitter = {};
+      const emojis = (x) => (String(x).match(/\p{Extended_Pictographic}/gu) || []).length;
+
+      // Os três textos: link, no máximo 2 emojis, só no fim de linha, tamanho, sem palavra barrada.
+      const vars = com.VARIANTES_AFILIADOS;
+      t('afiliados: 3 textos', vars.length === 3);
+      t('afiliados: todos com o link de cadastro', vars.every((v) => v.includes('https://phazegames.com/account/affiliate')));
+      t('afiliados: no máximo 2 emojis em cada', vars.every((v) => emojis(v) <= 2), vars.map(emojis).join(','));
+      t('afiliados: emoji só no fim da linha',
+        vars.every((v) => v.split('\n').every((l) => emojis(l.replace(/\p{Extended_Pictographic}️?\s*$/u, '')) === 0)));
+      t('afiliados: até 700 caracteres', vars.every((v) => v.length <= 700), vars.map((v) => v.length).join(','));
+      t('afiliados: sem Taobao/fornecedor', vars.every((v) => !require('./src/ponte/politica').vocabularioProibido().test(v)));
+
+      // Horário: dentro da janela, sorteado uma vez por dia, diferente do dia anterior.
+      const dias = Array.from({ length: 12 }, (_, i) => `2031-04-${String(i + 1).padStart(2, '0')}`);
+      const horas = dias.map((d) => com.horarioDosAfiliados(d));
+      t('afiliados: horário sempre dentro de 14:00-17:30', horas.every((m) => m >= 14 * 60 && m <= 17 * 60 + 30), horas.join(','));
+      t('afiliados: cada dia difere do anterior em 15+ min', horas.every((m, i) => i === 0 || Math.abs(m - horas[i - 1]) >= 15), horas.join(','));
+      t('afiliados: reinício não re-sorteia', com.horarioDosAfiliados(dias[3]) === horas[3]);
+
+      const diaA = '2031-05-10';
+      stA.jitter.afiliados[diaA] = 0;           // centro da janela: 15:45
+      const quandoA = com.horarioDosAfiliados(diaA);
+      t('afiliados: desvio 0 = 15:45', quandoA === 15 * 60 + 45, String(quandoA));
+      const naHoraA = (hhmm) => Date.parse(`${diaA}T${hhmm}:00-03:00`);
+      const videos = () => enviadas.filter((e) => e.opts && e.opts.video);
+      enviadas = [];
+      Date.now = () => naHoraA('15:40');
+      await com.tick();
+      t('afiliados: antes do horário nada sai', enviadas.length === 0);
+      Date.now = () => naHoraA('13:50');
+      await com.tick();
+      Date.now = () => naHoraA('18:30');
+      await com.tick();
+      t('afiliados: fora da janela (antes das 14h / depois das 17:30 + tolerância) nada sai', enviadas.length === 0, String(enviadas.length));
+      Date.now = () => naHoraA('15:50');
+      await com.tick();
+      t('afiliados: no horário sai UM vídeo com legenda, para o grupo efetivo',
+        videos().length === 1 && enviadas.length === 1 && enviadas[0].para === '120363000000000077@g.us' && enviadas[0].opts.fileName === 'afiliados.mp4' &&
+          vars.includes(enviadas[0].texto), `${enviadas.length} ${enviadas[0]?.para}`);
+      t('afiliados: o vídeo é o afiliados.mp4 (base64 não vazio)', typeof enviadas[0]?.opts.video === 'string' && enviadas[0].opts.video.length > 1000);
+      const primeira = vars.indexOf(enviadas[0]?.texto);
+      Date.now = () => naHoraA('16:20');
+      await com.tick();
+      delete require.cache[require.resolve('./src/community')];
+      com = require('./src/community');                // reinício do bot
+      Date.now = () => naHoraA('16:40');
+      await com.tick();
+      t('afiliados: não sai duas vezes no mesmo dia (nem após reinício)', enviadas.length === 1, String(enviadas.length));
+
+      // Grupo efetivo: o #grupo (registro) vence a env.
+      const grupoOf = require('./src/grupoOficial');
+      grupoOf.registrar({ jid: '120363111111111111@g.us', nome: 'novo' });
+      const dia2 = '2031-05-11';
+      com._estado().jitter.afiliados[dia2] = 20;       // 16:05
+      Date.now = () => Date.parse(`${dia2}T16:10:00-03:00`);
+      com._estado().ultimoPostGrupo = 0;
+      await com.tick();
+      t('afiliados: vai para o grupo registrado pelo #grupo, não o da env',
+        enviadas.length === 2 && enviadas[1].para === '120363111111111111@g.us', String(enviadas[1]?.para));
+      const segunda = vars.indexOf(enviadas[1]?.texto);
+      t('afiliados: o texto do dia seguinte não repete o do dia anterior', primeira >= 0 && segunda >= 0 && primeira !== segunda, `${primeira} ${segunda}`);
+      grupoOf.limpar();
+
+      // Rotação: nunca repete o último, em muitos sorteios.
+      let repetiu = false;
+      let ult = null;
+      for (let i = 0; i < 60; i++) {
+        const r = await com.genAfiliados();
+        const idx = vars.indexOf(r.text);
+        if (idx === ult) repetiu = true;
+        ult = idx;
+      }
+      t('afiliados: 60 sorteios seguidos sem repetir o anterior', !repetiu);
+
+      // Espaçamento: post recente no grupo segura o aviso até completar 20 min.
+      const dia3 = '2031-05-12';
+      com._estado().jitter.afiliados[dia3] = 0;
+      com._estado().ultimoPostGrupo = Date.parse(`${dia3}T15:40:00-03:00`);
+      const antes = enviadas.length;
+      Date.now = () => Date.parse(`${dia3}T15:50:00-03:00`);
+      await com.tick();
+      t('afiliados: respeita o espaçamento de 20 min do post anterior', enviadas.length === antes);
+      Date.now = () => Date.parse(`${dia3}T16:05:00-03:00`);
+      await com.tick();
+      t('afiliados: passado o espaçamento, sai', enviadas.length === antes + 1);
+
+      // Grupo fechado: não anuncia.
+      const dia4 = '2031-05-13';
+      cfgJ.portaoLigado = true;
+      const stP = com._estado();
+      stP.jitter.afiliados[dia4] = 0;
+      stP.jitter['portao-abre'] = { [dia4]: 0 }; stP.jitter['portao-fecha'] = { [dia4]: -600 }; // fecha 13:00
+      stP.ultimoPostGrupo = 0; stP.grupoAberto = false; stP.portaoManualAte = 0;
+      const ligA = chavesJ.ligada; chavesJ.ligada = () => false;
+      const antes4 = enviadas.length;
+      Date.now = () => Date.parse(`${dia4}T15:50:00-03:00`);
+      await com.tick();
+      t('afiliados: grupo fechado pelo horário não recebe', enviadas.length === antes4);
+      chavesJ.ligada = ligA;
+      cfgJ.portaoLigado = false;
+
+      // Desligado por env.
+      cfgJ.afiliadosLigado = false;
+      const dia5 = '2031-05-14';
+      com._estado().jitter.afiliados[dia5] = 0;
+      com._estado().ultimoPostGrupo = 0;
+      const antes5 = enviadas.length;
+      Date.now = () => Date.parse(`${dia5}T15:50:00-03:00`);
+      await com.tick();
+      t('afiliados: COMMUNITY_AFILIADOS_ENABLED=false não posta', enviadas.length === antes5);
+
+      // Dry-run: não envia.
+      cfgJ.afiliadosLigado = true; cfgJ.dryRun = true;
+      Date.now = () => Date.parse(`${dia5}T15:55:00-03:00`);
+      await com.tick();
+      t('afiliados: em dry-run só loga, não envia', enviadas.length === antes5);
+
+      cfgJ.afiliadosLigado = salvoA.lig; cfgJ.afiliadosInicioMin = salvoA.ini; cfgJ.afiliadosFimMin = salvoA.fim; cfgJ.dryRun = salvoA.dry;
+      cfgJ.schedule = [];
+    }
+
     Date.now = salvoJ.now;
     cfgJ.enabled = salvoJ.enabled; cfgJ.dryRun = salvoJ.dry; cfgJ.groupJid = salvoJ.jid;
     cfgJ.portaoLigado = salvoJ.port; cfgJ.saudacoesLigadas = salvoJ.saud; cfgJ.schedule = salvoJ.sched;
+    cfgJ.afiliadosLigado = afilOriginal;
 
     // Posvenda: variações sem repetir em sequência.
     const pv = require('./src/posvenda');

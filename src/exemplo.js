@@ -92,4 +92,10 @@ function opcoes(qual) {
  */
 const tutorialInstalacao = () => carregar('tutorial-instalacao.mp4');
 
-module.exports = { telaDoConsole, primeiroLogin, tutorialInstalacao, opcoes };
+/**
+ * Vídeo do aviso diário do programa de afiliados no grupo (6 MB, 720x1280).
+ * Vai como vídeo + legenda numa mensagem só (ver community.js, genAfiliados).
+ */
+const afiliados = () => carregar('afiliados.mp4');
+
+module.exports = { telaDoConsole, primeiroLogin, tutorialInstalacao, afiliados, opcoes };

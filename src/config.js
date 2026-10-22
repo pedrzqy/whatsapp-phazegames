@@ -16,6 +16,13 @@ function llmProvider(name, url, apiKey, model, reasoningEffort = '') {
   return { name, url: url.replace(/\/$/, ''), apiKey, model, reasoningEffort };
 }
 
+// "14:30" (ou "14") em minutos desde 00:00; fallback se vazio/inválido.
+function parseHHMM(raw, fallback) {
+  const m = String(raw ?? '').trim().match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if (!m) return fallback;
+  return Number(m[1]) < 24 && Number(m[2] || 0) < 60 ? Number(m[1]) * 60 + Number(m[2] || 0) : fallback;
+}
+
 // Converte "12,19" numa lista de horas válidas (0-23); usa fallback se vazio/inválido.
 function parseHours(raw, fallback) {
   const src = (raw && String(raw).trim()) || fallback;
@@ -271,6 +278,15 @@ const config = {
     avaliacaoUrl: process.env.COMMUNITY_AVALIACAO_URL || '',
     // Imagem fixa do post de avaliação. Vazio = usa a capa de um jogo da loja.
     avaliacaoImagem: process.env.COMMUNITY_AVALIACAO_IMAGEM || '',
+
+    // AVISO DIARIO DO PROGRAMA DE AFILIADOS: video + legenda, 1x/dia, num horario
+    // sorteado dentro da JANELA da tarde (diferente a cada dia). Nao entra em
+    // `schedule` porque la o horario e "hora cheia + desvio", e aqui e uma janela.
+    // Respeita grupo fechado, espacamento minimo e dry-run como os demais posts.
+    afiliadosLigado: process.env.COMMUNITY_AFILIADOS_ENABLED !== 'false',
+    // Janela (BRT) em minutos desde 00:00. Formato da env: HH:MM.
+    afiliadosInicioMin: parseHHMM(process.env.COMMUNITY_AFILIADOS_INICIO, 14 * 60),
+    afiliadosFimMin: parseHHMM(process.env.COMMUNITY_AFILIADOS_FIM, 17 * 60 + 30),
 
     // ── FASE 2 (interativo): responder no grupo quando marcarem o bot (@) ou usarem gatilho ──
     // Default OFF. Além disto, a Evolution só entrega msgs de grupo se groupsIgnore=false.

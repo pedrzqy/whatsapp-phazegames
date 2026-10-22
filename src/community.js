@@ -24,6 +24,7 @@ const evolution = require('./evolution');
 const ai = require('./ai');
 const saudacoes = require('./saudacoes');
 const jitter = require('./jitter');
+const exemplo = require('./exemplo');
 
 const cfg = config.community;
 const grupoOficial = require('./grupoOficial');
@@ -370,6 +371,39 @@ async function genAvaliacao() {
   return { text: linhas.join('\n'), image };
 }
 
+// ─── Aviso diário do programa de afiliados ───────────────────────────
+//
+// O vídeo (assets/afiliados.mp4) convida a virar afiliado da Phaze Games e
+// ganhar comissão vendendo jogo; a legenda traz o link de cadastro. Três
+// textos, em parágrafos, no máximo 2 emojis e só no fim de linha. O link vai
+// sozinho na própria linha para o WhatsApp montar a prévia e o toque funcionar.
+const AFILIADOS_LINK = 'https://phazegames.com/account/affiliate';
+const VARIANTES_AFILIADOS = [
+  'Já pensou em fazer uma grana extra com jogos, sem sair de casa?\n\n' +
+    'A Phaze Games agora tem um programa de afiliados: você indica os jogos para quem você conhece e recebe uma comissão em cada venda feita pelo seu link. É só compartilhar do jeito que você já faz no dia a dia. 💰\n\n' +
+    'Quer fazer parte da nossa equipe? O cadastro é rápido e gratuito:\n' +
+    AFILIADOS_LINK,
+  'Quem joga conhece gente que também joga, e agora isso pode render uma renda extra.\n\n' +
+    'No programa de afiliados da Phaze Games você divulga os jogos, acompanha suas vendas e ganha comissão sobre cada uma. Sem horário fixo e sem sair de casa, no seu ritmo. 🎮\n\n' +
+    'Entre para a equipe e comece hoje mesmo:\n' +
+    AFILIADOS_LINK,
+  'Que tal transformar a sua paixão por videogame em uma graninha extra?\n\n' +
+    'Como afiliado da Phaze Games, você compartilha o seu link com amigos, grupos e redes sociais e ganha uma comissão a cada jogo vendido. Assista ao vídeo e veja como é simples. ✨\n\n' +
+    'Para se cadastrar, é só acessar:\n' +
+    AFILIADOS_LINK,
+];
+
+/** Vídeo + legenda do dia. A variação nunca repete a do último dia (state.textoUlt). */
+async function genAfiliados() {
+  const video = exemplo.afiliados();
+  if (!video) { console.warn('[community] afiliados: assets/afiliados.mp4 indisponível — não posta'); return null; }
+  state.textoUlt = state.textoUlt || {};
+  const { texto, indice } = jitter.variar(VARIANTES_AFILIADOS, state.textoUlt.afiliados);
+  state.textoUlt.afiliados = indice;
+  saveState();
+  return { text: texto, video, fileName: 'afiliados.mp4' };
+}
+
 // Geradores por chave (usados pela AGENDA de cadência em config.community.schedule).
 const GENERATORS = {
   news: genNews,
@@ -378,25 +412,27 @@ const GENERATORS = {
   coupon: genCoupon,
   bestsellers: genBestSellers,
   avaliacao: genAvaliacao,
+  afiliados: genAfiliados,
 };
 
 // ─── Envio ───────────────────────────────────────────────────────────
-async function publish(text, image) {
+async function publish(text, image, video, fileName) {
   // Carimbo de QUALQUER publicação no grupo (post ou saudação): o espaçamento
   // mínimo entre posts conta a partir dele.
   state.ultimoPostGrupo = Date.now();
   saveState();
   if (cfg.dryRun) {
-    console.log(`[community] (DRY-RUN, não enviado)${image ? ` [imagem: ${image}]` : ''} →\n${text}\n`);
+    console.log(`[community] (DRY-RUN, não enviado)${image ? ` [imagem: ${image}]` : ''}${video ? ' [vídeo]' : ''} →\n${text}\n`);
     return;
   }
   await sender.send(grupoJid(), text, {
     typing: false, // não simular "digitando" em grupo
     reaction: false,
     ...(image ? { image, imageOnly: true } : {}), // card com imagem; NÃO cai pra texto
+    ...(video ? { video, fileName: fileName || 'video.mp4' } : {}), // vídeo + legenda numa mensagem só
     ...(cfg.instance ? { instance: cfg.instance } : {}),
   });
-  console.log(`[community] post publicado no grupo${image ? ' (c/ imagem)' : ''}`);
+  console.log(`[community] post publicado no grupo${image ? ' (c/ imagem)' : ''}${video ? ' (c/ vídeo)' : ''}`);
 }
 
 // ─── Agendador (CADÊNCIA por tipo: cada conteúdo tem intervalo e horário) ──
@@ -450,6 +486,25 @@ function horariosDoPortao(dateKey) {
 /** Minuto do dia (BRT) em que esta entrada da agenda sai neste dia. */
 function horarioDoPost(item, dateKey) {
   return limitarMin(item.hour * 60 + desvioDe(`post-${item.key}@${item.hour}`, dateKey));
+}
+
+/**
+ * Minuto do dia (BRT) em que o aviso de afiliados sai neste dia.
+ *
+ * Sorteia dentro da janela [início, fim] (padrão 14:00 a 17:30) e grava em
+ * state.jitter.afiliados[dia]: reiniciar não re-sorteia. Reaproveita o
+ * desvioDoDia, então o de hoje difere do de ontem em pelo menos 15 min.
+ */
+function horarioDosAfiliados(dateKey) {
+  const ini = cfg.afiliadosInicioMin;
+  const fim = Math.max(ini, cfg.afiliadosFimMin);
+  const faixa = Math.floor((fim - ini) / 2);
+  state.jitter = state.jitter || {};
+  state.jitter.afiliados = state.jitter.afiliados || {};
+  const jaTinha = Number.isFinite(state.jitter.afiliados[dateKey]);
+  const d = jitter.desvioDoDia(state.jitter.afiliados, dateKey, { faixa, minDiff: Math.min(jitter.MIN_DIFF, faixa) });
+  if (!jaTinha) saveState();
+  return limitarMin(ini + faixa + d);
 }
 
 /** Folga mínima entre dois posts do grupo (qualquer tipo). */
@@ -669,6 +724,45 @@ function grupoFechado() {
   return !deveEstarAberto(hour, minute, dateKey);
 }
 
+/**
+ * Posta o aviso de afiliados se for a hora. true = publicou nesta volta.
+ *
+ * Mesmas travas dos outros posts: slot do dia gravado ANTES de publicar (não
+ * duplica entre ticks/reinícios), grupo fechado não recebe, espaçamento mínimo
+ * entre posts, e um tick perdido ainda vale por TOLERANCIA_POST_MIN.
+ */
+async function tickAfiliados(now, hour, minute, dateKey) {
+  if (!cfg.afiliadosLigado) return false;
+  const agoraMin = hour * 60 + minute;
+  const quando = horarioDosAfiliados(dateKey);
+  if (agoraMin < quando || agoraMin >= quando + TOLERANCIA_POST_MIN) return false;
+  if (cfg.portaoLigado && !deveEstarAberto(hour, minute, dateKey)) return false;
+  const slotKey = `afiliados-${dateKey}`;
+  if (state.slots[slotKey]) return false;
+  if (now - (state.ultimoPostGrupo || 0) < ESPACO_MIN_MS) return false; // fica para o próximo tick
+
+  let result = null;
+  try { result = await genAfiliados(); }
+  catch (err) { console.error('[community] gerador afiliados falhou:', err.message); }
+  if (!result || !result.text) return false;
+
+  state.slots[slotKey] = now;
+  saveState();
+  await publish(result.text, null, result.video, result.fileName);
+  console.log('[community] postado "afiliados"');
+  return true;
+}
+
+/** Foto do aviso de afiliados, para o comando do operador. */
+function estadoDosAfiliados() {
+  const { dateKey } = brt(Date.now());
+  return {
+    ligado: Boolean(cfg.afiliadosLigado),
+    hoje: hhmm(horarioDosAfiliados(dateKey)),
+    jaSaiu: Boolean(state.slots?.[`afiliados-${dateKey}`]),
+  };
+}
+
 async function tick() {
   if (running || !cfg.enabled || !grupoJid()) return;
   running = true;
@@ -720,6 +814,10 @@ async function tick() {
     for (const k of Object.keys(state.slots)) {
       if (now - state.slots[k] > 15 * 24 * 60 * 60 * 1000) delete state.slots[k];
     }
+
+    // Aviso diário de afiliados (vídeo + legenda). Um envio por tick: se saiu,
+    // a agenda normal espera a próxima volta.
+    if (await tickAfiliados(now, hour, minute, dateKey)) return;
 
     for (const item of cfg.schedule) {
       // Cada entrada posta no SEU horário DO DIA: base + desvio sorteado (±30 min,
@@ -807,7 +905,8 @@ function start() {
           const result = await gen();
           const text = typeof result === 'string' ? result : (result && result.text);
           const image = typeof result === 'string' ? null : (result && result.image);
-          if (text) { await publish(text, image); console.log(`[community] FORCE post "${key}"`); }
+          const video = typeof result === 'string' ? null : (result && result.video);
+          if (text) { await publish(text, image, video, result && result.fileName); console.log(`[community] FORCE post "${key}"`); }
           else console.warn(`[community] FORCE: "${key}" sem conteúdo`);
         } catch (err) { console.error(`[community] FORCE "${key}" falhou:`, err.message); }
       }
@@ -820,4 +919,4 @@ function stop() { if (timer) { clearInterval(timer); timer = null; } }
 // A peneira das saudações vai exportada para o teste: é ela que decide o que de
 // texto GERADO chega num grupo de centenas de pessoas sem ninguém ler antes.
 // Sem alcançá-la, o teste dublaria justamente o que deveria estar medindo.
-module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, horariosDoPortao, horarioDoPost, TEXTOS, varia, _estado: () => state, saudacaoAprovada, saudar, mexerNoPortao, estadoDoPortao, grupoMudou, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
+module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, horariosDoPortao, horarioDoPost, TEXTOS, varia, _estado: () => state, saudacaoAprovada, saudar, mexerNoPortao, estadoDoPortao, grupoMudou, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao, genAfiliados, horarioDosAfiliados, estadoDosAfiliados, VARIANTES_AFILIADOS, AFILIADOS_LINK };

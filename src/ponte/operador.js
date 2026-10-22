@@ -246,6 +246,10 @@ async function executar(texto, de = '', ctx = {}) {
       `Abre ${e.abreHora}h · fecha ${e.fechaHora}h\n` +
       (e.ligado ? '' : '\n⚠️ O automático está desligado (#admin 9).\n') +
       (e.manualPorMin ? `\n_Mexido na mão: o automático volta em ${e.manualPorMin} min._\n` : '') +
+      (() => {
+        const a = comunidade.estadoDosAfiliados();
+        return `Afiliados: ${a.ligado ? `hoje às ${a.hoje}${a.jaSaiu ? ' (já saiu)' : ''}` : 'desligado'}\n`;
+      })() +
       `\nGrupo: ${grupoOficial.jid()}${grupoOficial.dadosRegistrados() ? ' (registrado pelo #grupo)' : ' (da env)'}\n` +
       `Link: ${grupoOficial.url()}\n` +
       `\n*#grupo abrir* · *#grupo fechar* · *#grupo env*`
