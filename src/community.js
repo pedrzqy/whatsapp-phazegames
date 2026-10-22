@@ -26,6 +26,9 @@ const saudacoes = require('./saudacoes');
 const jitter = require('./jitter');
 
 const cfg = config.community;
+const grupoOficial = require('./grupoOficial');
+// Sempre pelo getter: o #grupo troca o grupo com o bot no ar (registro > env).
+const grupoJid = () => grupoOficial.jid();
 const STORE_URL = config.store.url;
 
 let timer = null;
@@ -387,7 +390,7 @@ async function publish(text, image) {
     console.log(`[community] (DRY-RUN, não enviado)${image ? ` [imagem: ${image}]` : ''} →\n${text}\n`);
     return;
   }
-  await sender.send(cfg.groupJid, text, {
+  await sender.send(grupoJid(), text, {
     typing: false, // não simular "digitando" em grupo
     reaction: false,
     ...(image ? { image, imageOnly: true } : {}), // card com imagem; NÃO cai pra texto
@@ -511,7 +514,7 @@ async function ajustarPortao(hour, minute, dateKey) {
   }
 
   try {
-    await evolution.portaoDoGrupo(cfg.groupJid, aberto, cfg.instance ? { instance: cfg.instance } : {});
+    await evolution.portaoDoGrupo(grupoJid(), aberto, cfg.instance ? { instance: cfg.instance } : {});
     state.grupoAberto = aberto;
     state.portaoEm = Date.now();
     state.portaoFalhas = 0;
@@ -602,11 +605,11 @@ async function saudar(tipo, dateKey) {
  * @returns {Promise<{ok:boolean, erro?:string}>}
  */
 async function mexerNoPortao(aberto) {
-  if (!cfg.groupJid) return { ok: false, erro: 'não há grupo configurado' };
+  if (!grupoJid()) return { ok: false, erro: 'não há grupo configurado' };
 
   try {
     if (!cfg.dryRun) {
-      await evolution.portaoDoGrupo(cfg.groupJid, aberto, cfg.instance ? { instance: cfg.instance } : {});
+      await evolution.portaoDoGrupo(grupoJid(), aberto, cfg.instance ? { instance: cfg.instance } : {});
     }
     state.grupoAberto = aberto;
     state.portaoEm = Date.now();
@@ -625,14 +628,29 @@ async function mexerNoPortao(aberto) {
   }
 }
 
+/**
+ * O grupo oficial mudou (#grupo): o que o estado dizia do grupo ANTIGO não vale.
+ *
+ * Zera só o estado do portão (aberto/fechado, recuo, trava manual), para o
+ * próximo tick aplicar o horário no grupo novo. Os slots do dia ficam como
+ * estão: zerar faria o mesmo anúncio sair duas vezes no mesmo dia.
+ */
+function grupoMudou() {
+  delete state.grupoAberto;
+  state.portaoManualAte = 0;
+  state.portaoTentaApos = 0;
+  state.portaoFalhas = 0;
+  saveState();
+}
+
 /** Foto do portão, para o comando do operador. */
 function estadoDoPortao() {
   const { hour, minute, dateKey } = brt(Date.now());
   const manualPor = Math.max(0, (state.portaoManualAte || 0) - Date.now());
   const { abreMin, fechaMin } = horariosDoPortao(dateKey);
   return {
-    ligado: cfg.portaoLigado && Boolean(cfg.groupJid),
-    temGrupo: Boolean(cfg.groupJid),
+    ligado: cfg.portaoLigado && Boolean(grupoJid()),
+    temGrupo: Boolean(grupoJid()),
     aberto: state.grupoAberto,
     deveriaEstarAberto: deveEstarAberto(hour, minute, dateKey),
     abreHora: cfg.abreHora,
@@ -646,13 +664,13 @@ function estadoDoPortao() {
 
 /** Para o #status: o grupo está fechado neste instante? */
 function grupoFechado() {
-  if (!cfg.portaoLigado || !cfg.groupJid) return false;
+  if (!cfg.portaoLigado || !grupoJid()) return false;
   const { hour, minute, dateKey } = brt(Date.now());
   return !deveEstarAberto(hour, minute, dateKey);
 }
 
 async function tick() {
-  if (running || !cfg.enabled || !cfg.groupJid) return;
+  if (running || !cfg.enabled || !grupoJid()) return;
   running = true;
   try {
     const now = Date.now();
@@ -765,11 +783,13 @@ async function tick() {
 
 function start() {
   if (!cfg.enabled) { console.log('[community] desligada (COMMUNITY_ENABLED != true)'); return; }
-  if (!cfg.groupJid) { console.log('[community] SEM COMMUNITY_GROUP_JID — não vai postar'); return; }
+  // Sem grupo ainda NÃO retorna: o #grupo pode registrar um com o bot no ar, e
+  // o tick já confere o grupo a cada volta (sem grupo, não faz nada).
+  if (!grupoJid()) console.log('[community] sem grupo (COMMUNITY_GROUP_JID ou #grupo) — não posta até registrarem um');
   if (timer) return;
   const agenda = cfg.schedule.map((s) => `${s.key} a cada ${s.everyDays}d @${s.hour}h(±${jitter.FAIXA}min)`).join(', ') || '(vazia)';
   console.log(
-    `[community] ligada — grupo ${cfg.groupJid}${cfg.instance ? ` (instância ${cfg.instance})` : ''}; ` +
+    `[community] ligada — grupo ${grupoJid()}${cfg.instance ? ` (instância ${cfg.instance})` : ''}; ` +
     `agenda: ${agenda} (BRT); ${cfg.dryRun ? 'DRY-RUN' : 'AO VIVO'}`
   );
   timer = setInterval(tick, cfg.checkIntervalMs);
@@ -800,4 +820,4 @@ function stop() { if (timer) { clearInterval(timer); timer = null; } }
 // A peneira das saudações vai exportada para o teste: é ela que decide o que de
 // texto GERADO chega num grupo de centenas de pessoas sem ninguém ler antes.
 // Sem alcançá-la, o teste dublaria justamente o que deveria estar medindo.
-module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, horariosDoPortao, horarioDoPost, TEXTOS, varia, _estado: () => state, saudacaoAprovada, saudar, mexerNoPortao, estadoDoPortao, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };
+module.exports = { start, stop, tick, ajustarPortao, grupoFechado, deveEstarAberto, horariosDoPortao, horarioDoPost, TEXTOS, varia, _estado: () => state, saudacaoAprovada, saudar, mexerNoPortao, estadoDoPortao, grupoMudou, genBestSellers, genPromo, genCoupon, genNews, genReviews, genAvaliacao };

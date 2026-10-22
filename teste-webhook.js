@@ -496,6 +496,32 @@ function webhookDe(numero, message, pushName = 'Cliente') {
   // (grupo é desviado para o community; aqui só garantimos que não estourou)
   t('grupo não derruba o webhook', true);
 
+  // fromMe em GRUPO: só o `#grupo` exato (o dono digitando pelo número da loja)
+  // chega ao comando. O resto do que o número da loja escreve no grupo é ignorado.
+  {
+    const GRUPO_PUB = '120363000000000321@g.us';
+    const estadoGr = require('./src/ponte/estado');
+    const goGr = require('./src/grupoOficial');
+    const evoGr = require('./src/evolution');
+    const salvoGr = { i: evoGr.infoDoGrupo, l: evoGr.linkDoGrupo };
+    evoGr.infoDoGrupo = async () => ({ nome: 'Grupo Aberto', tamanho: 5, souAdmin: true });
+    evoGr.linkDoGrupo = async () => 'https://chat.whatsapp.com/XYZ';
+    estadoGr.dados.grupoComunidade = null;
+    enviadas.length = 0;
+    await entregar({ data: { key: { remoteJid: GRUPO_PUB, fromMe: true }, message: { conversation: 'Bom dia pessoal, promoção!' } } });
+    await entregar({ data: { key: { remoteJid: GRUPO_PUB, fromMe: true }, message: { conversation: '#grupo abrir' } } });
+    await entregar({ data: { key: { remoteJid: GRUPO_PUB, fromMe: true }, message: { conversation: '#staff' } } });
+    t('fromMe em grupo com outro texto é ignorado', !estadoGr.dados.grupoComunidade && enviadas.length === 0);
+    await entregar({ data: { key: { remoteJid: GRUPO_PUB, fromMe: false, participant: '5511900001111@s.whatsapp.net' }, message: { conversation: '#grupo' } } });
+    t('#grupo de desconhecido no grupo é ignorado', !estadoGr.dados.grupoComunidade);
+    await entregar({ data: { key: { remoteJid: GRUPO_PUB, fromMe: true }, message: { conversation: '#grupo' } } });
+    t('#grupo fromMe no grupo registra', estadoGr.dados.grupoComunidade?.jid === GRUPO_PUB && goGr.jid() === GRUPO_PUB);
+    t('  e a confirmação vai ao privado, nunca ao grupo', enviadas.length > 0 && !enviadas.some((e) => e.para === GRUPO_PUB));
+    estadoGr.dados.grupoComunidade = null;
+    enviadas.length = 0;
+    evoGr.infoDoGrupo = salvoGr.i; evoGr.linkDoGrupo = salvoGr.l;
+  }
+
   await entregar({ data: { key: { remoteJid: 'status@broadcast', fromMe: false }, message: { conversation: 'x' } } });
   // Filtra pelo DESTINO em vez de contar o total: o cenario anterior (o
   // operador digitando) dispara um envio proprio, e ele pode cair dentro desta

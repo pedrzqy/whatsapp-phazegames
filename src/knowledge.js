@@ -37,12 +37,15 @@ module.exports = {
   // pode conferir sozinho, agora, sem falar com a gente. Por isso ele fecha a
   // resposta em vez de abrir: quem ainda estiver com medo depois de ler tem
   // para onde ir, e quem já se convenceu não precisa sair da conversa.
-  banimento:
-    'Risco zero de banimento no seu console. Estamos há mais de 1 ano no mercado e não tivemos ' +
+  // GETTER, não string: o link do grupo muda com o #grupo, e uma string fixa
+  // guardaria o link velho até o próximo deploy.
+  get banimento() {
+    return 'Risco zero de banimento no seu console. Estamos há mais de 1 ano no mercado e não tivemos ' +
     'um caso sequer. Na prática é o mesmo que adicionar um perfil novo no seu console: nada muda ' +
     'no que já é seu. Quem aparece dizendo que tomou ban nunca consegue mostrar que foi por isso. ' +
     'E você não precisa acreditar só na minha palavra: nosso grupo é aberto, tem mais de 600 clientes, ' +
-    `e é lá que eles contam a compra, o que acharam e qualquer problema que tenham tido: ${require('./config').store.groupUrl}`,
+    `e é lá que eles contam a compra, o que acharam e qualquer problema que tenham tido: ${require('./grupoOficial').url()}`;
+  },
 
   // PlayStation saiu do catálogo (17/08/2026). O fato foi removido de
   // propósito, e não só escondido do menu: enquanto ele existisse aqui, a IA

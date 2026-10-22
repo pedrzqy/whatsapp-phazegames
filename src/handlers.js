@@ -1204,30 +1204,47 @@ async function onNerixEvent(event) {
 // substituíram a IA no caminho de consulta, e um erro ali entrega dado de
 // pedido errado ou deixa o cliente sem resposta.
 /**
- * Comando do operador DENTRO de um grupo (hoje só o #staff).
+ * Comando DENTRO de um grupo: só o #staff e o #grupo.
  *
- * O bot não conversa em grupo, e isto não muda: só entra aqui um #staff, e só
- * de número que está na lista de operadores. Em grupo o remetente vem em
- * `participant` (o `remoteJid` é o grupo), então quem decide é a lista de
- * candidatos de quem mandou. Qualquer outra mensagem de grupo, ou #staff de
- * quem não é operador, é ignorada em silêncio.
+ * O bot não conversa em grupo, e isto não muda: só entra aqui um #staff ou um
+ * `#grupo` sozinho, e só de quem pode.
+ *  - #staff: só de número que está na lista de operadores. Em grupo o remetente
+ *    vem em `participant` (o `remoteJid` é o grupo), então quem decide é a lista
+ *    de candidatos de quem mandou.
+ *  - #grupo: de operador OU do próprio número da loja (`proprio`: fromMe, o dono
+ *    digitando pelo app do número oficial). Nenhum outro texto fromMe passa.
+ * Qualquer outra mensagem de grupo é ignorada em silêncio.
  *
- * @param {{grupo:string, remetentes:string[], texto:string}} p
+ * A resposta do #grupo NUNCA vai para o grupo (público, 600+ pessoas): vai ao
+ * privado dos operadores e ao grupo da equipe, se houver. A do #staff continua
+ * no próprio grupo (que é da equipe).
+ *
+ * @param {{grupo:string, remetentes:string[], texto:string, proprio?:boolean}} p
  * @returns {Promise<boolean>} true se tratou
  */
-async function onGrupoComando({ grupo, remetentes = [], texto }) {
-  if (!/^#staff\b/i.test(String(texto || '').trim())) return false;
+async function onGrupoComando({ grupo, remetentes = [], texto, proprio = false }) {
+  const limpo = String(texto || '').trim();
+  const ehStaff = /^#staff\b/i.test(limpo);
+  const ehGrupo = /^#grupo$/i.test(limpo); // exato: nada de #grupo abrir em grupo
+  if (!ehStaff && !ehGrupo) return false;
   const cfgOp = require('./ponte/config').operador;
   const quem = remetentes.filter(Boolean).find((r) => cfgOp.ehOperador(r));
-  if (!quem) {
-    console.warn(`[grupo] #staff em ${grupo} de ${remetentes.filter(Boolean).join('/') || '?'} — não é operador, ignorei`);
+  if (!quem && !(ehGrupo && proprio)) {
+    console.warn(`[grupo] ${limpo.slice(0, 8)} em ${grupo} de ${remetentes.filter(Boolean).join('/') || '?'} — não é operador, ignorei`);
     return false;
   }
   try {
-    const resposta = await operador.executar(String(texto).trim(), quem, { grupo });
-    if (resposta) await sender.send(grupo, resposta, { typing: false });
+    const resposta = await operador.executar(limpo, quem || 'proprio', { grupo });
+    if (!resposta) return true;
+    if (ehStaff) {
+      await sender.send(grupo, resposta, { typing: false });
+    } else {
+      await vendas.avisarOperador(resposta, { typing: false });
+      const staff = await vendas.grupoDeVendas().catch(() => null);
+      if (staff && staff !== grupo) await sender.send(staff, resposta, { typing: false }).catch(() => {});
+    }
   } catch (err) {
-    console.error('[grupo] #staff falhou:', err.message);
+    console.error(`[grupo] ${limpo.slice(0, 8)} falhou:`, err.message);
   }
   return true;
 }

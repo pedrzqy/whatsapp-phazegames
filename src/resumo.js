@@ -105,10 +105,11 @@ function codigosDoDia(dia) {
 /** Participantes agora, ou null. */
 async function membrosAgora() {
   const comunidade = require('./config').community;
-  if (!comunidade.groupJid) return null;
+  const grupo = require('./grupoOficial').jid();
+  if (!grupo) return null;
   try {
     return await require('./evolution').contarParticipantes(
-      comunidade.groupJid,
+      grupo,
       comunidade.instance ? { instance: comunidade.instance } : {},
     );
   } catch (err) {
@@ -194,4 +195,7 @@ function iniciar({ intervaloMs = 5 * 60 * 1000 } = {}) {
 }
 function parar() { if (timer) clearInterval(timer); timer = null; }
 
-module.exports = { iniciar, parar, tick, parcial, montar, horarioDoDia, DESPEDIDAS, TITULOS, _estado: () => estado, _recarregar: carregar };
+/** O grupo mudou (#grupo): o retrato de membros era do antigo, a diferença não faria sentido. */
+function grupoMudou() { delete estado.retrato; salvar(); }
+
+module.exports = { grupoMudou, iniciar, parar, tick, parcial, montar, horarioDoDia, DESPEDIDAS, TITULOS, _estado: () => estado, _recarregar: carregar };

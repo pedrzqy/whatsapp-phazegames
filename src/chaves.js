@@ -191,7 +191,7 @@ const CATALOGO = [
     // barato de conferir: se existe grupo configurado.
     impedimento: () => {
       if (!config.community.enabled) return 'o agente de comunidade está desligado (COMMUNITY_ENABLED)';
-      if (!config.community.groupJid) return 'não há grupo configurado (COMMUNITY_GROUP_JID)';
+      if (!require('./grupoOficial').jid()) return 'não há grupo configurado (mande #grupo dentro dele, ou COMMUNITY_GROUP_JID)';
       return null;
     },
   },

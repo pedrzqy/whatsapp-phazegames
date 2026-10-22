@@ -120,6 +120,55 @@ async function fetchAllGroups(opts = {}) {
 }
 
 /**
+ * Dados do grupo: nome, nº de participantes e se o NOSSO número é admin.
+ * `souAdmin` é null quando não deu para descobrir o nosso número.
+ */
+async function infoDoGrupo(groupJid, opts = {}) {
+  const instance = opts.instance || config.evolution.instance;
+  const { data } = await http.get(`/group/findGroupInfos/${instance}`, {
+    params: { groupJid },
+    timeout: 15000,
+  });
+  const g = Array.isArray(data) ? data[0] : data;
+  if (!g) throw new Error('grupo não encontrado');
+  const lista = Array.isArray(g.participants) ? g.participants : [];
+
+  // Nosso número: a Evolution v2 devolve ownerJid em fetchInstances.
+  let meu = null;
+  try {
+    const r = await http.get('/instance/fetchInstances', { params: { instanceName: instance }, timeout: 15000 });
+    const inst = Array.isArray(r.data) ? r.data[0] : r.data;
+    meu = String(inst?.ownerJid || inst?.instance?.owner || inst?.number || '').split('@')[0].split(':')[0] || null;
+  } catch { /* sem o número, souAdmin fica null */ }
+
+  let souAdmin = null;
+  if (meu && lista.length) {
+    const eu = lista.find((p) => String(p.id || p.jid || p.phoneNumber || '').split('@')[0].split(':')[0] === meu
+      || String(p.phoneNumber || '').split('@')[0] === meu);
+    souAdmin = eu ? Boolean(eu.admin) : false;
+  }
+  return {
+    nome: g.subject || g.name || '',
+    tamanho: lista.length || (Number.isFinite(g.size) ? g.size : null),
+    souAdmin,
+  };
+}
+
+/** Link de convite do grupo (https://chat.whatsapp.com/…). Exige ser admin. */
+async function linkDoGrupo(groupJid, opts = {}) {
+  const instance = opts.instance || config.evolution.instance;
+  const { data } = await http.get(`/group/inviteCode/${instance}`, {
+    params: { groupJid },
+    timeout: 15000,
+  });
+  const direto = data?.inviteUrl || data?.url;
+  if (direto) return String(direto);
+  const codigo = data?.inviteCode || data?.code;
+  if (codigo) return `https://chat.whatsapp.com/${codigo}`;
+  throw new Error('a Evolution não devolveu o link');
+}
+
+/**
  * Quantos participantes tem o grupo, ou null se não deu para saber.
  * Serve ao resumo do dia (membros novos = diferença entre dois retratos).
  */
@@ -299,5 +348,7 @@ module.exports = {
   portaoDoGrupo,
   fetchAllGroups,
   contarParticipantes,
+  infoDoGrupo,
+  linkDoGrupo,
   getBase64FromMediaMessage,
 };

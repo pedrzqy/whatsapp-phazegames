@@ -35,7 +35,7 @@ const AJUDA = [
   '*Comandos*',
   '',
   '*#admin* — painel: liga e desliga cada função',
-  '*#grupo* — abre ou fecha o grupo na mão, para testar o horário',
+  '*#grupo* — mande DENTRO do grupo da comunidade (do número da loja ou do seu): ele vira o grupo oficial, vence a env, e a confirmação vem aqui no privado · no privado: *#grupo abrir* · *#grupo fechar* · *#grupo env* (volta ao da env)',
   '*#staff* — mande DENTRO do grupo da equipe: as vendas passam a ser avisadas lá · *#staff off* volta ao privado · *#staff teste*',
   '*#status* — testa tudo e diz o que está errado',
   '*#resumo* — o resumo do dia até agora (o completo sai sozinho à noite no grupo da equipe)',
@@ -191,7 +191,39 @@ async function executar(texto, de = '', ctx = {}) {
   // lido como o que ele é.
   if (cmd === 'grupo') {
     const comunidade = require('../community');
+    const grupoOficial = require('../grupoOficial');
     const acao = (id || '').toLowerCase();
+
+    // DENTRO de um grupo, sozinho: registra aquele grupo como o oficial da
+    // comunidade. O JID vem da própria mensagem. O registro vence a env
+    // COMMUNITY_GROUP_JID (o dono opera do celular e não mexe na env) e fica
+    // em ponte.json, no volume. O link é buscado na Evolution; se falhar, vale
+    // o STORE_GROUP_URL.
+    if (ctx.grupo) {
+      if (acao) return '';
+      const jid = ctx.grupo;
+      const info = await evolution.infoDoGrupo(jid).catch((err) => ({ erro: err.message }));
+      const link = await evolution.linkDoGrupo(jid).catch((err) => { console.warn('[grupo] link:', err.message); return null; });
+      const antes = grupoOficial.jid();
+      grupoOficial.registrar({ jid, nome: info.nome || '', url: link });
+      return (
+        `✅ Grupo oficial registrado${info.nome ? `: *${info.nome}*` : ''}\n` +
+        `JID: ${jid}\n` +
+        (info.tamanho != null ? `Membros: ${info.tamanho}\n` : '') +
+        (info.erro ? `⚠️ Não consegui ler os dados do grupo (${info.erro}).\n` : '') +
+        (info.souAdmin === true ? 'O número da loja é admin: o horário (abrir/fechar) funciona.\n'
+          : info.souAdmin === false ? '⚠️ O número da loja NÃO é admin deste grupo: o horário não vai abrir/fechar. Promova o número da loja a admin.\n'
+            : 'Admin: não consegui conferir. Se o horário não mexer no grupo, promova o número da loja a admin.\n') +
+        (link ? `Link: ${link}\n` : `⚠️ Não consegui buscar o link (precisa ser admin). Continua valendo o da env: ${grupoOficial.url()}\n`) +
+        (antes && antes !== jid ? `\nO grupo anterior (${antes}) não recebe mais nada.` : '')
+      );
+    }
+
+    if (acao === 'env' || acao === 'padrao' || acao === 'padrão') {
+      grupoOficial.limpar();
+      const g = grupoOficial.jid();
+      return g ? `🔁 Voltei ao grupo da env (COMMUNITY_GROUP_JID): ${g}` : '🔁 Registro removido. Não há grupo na env: nada será postado até o #grupo.';
+    }
 
     if (/^(abrir|abre|abre?r|on)$/.test(acao) || /^(fechar|fecha|off)$/.test(acao)) {
       const abrir = /^(abrir|abre|abre?r|on)$/.test(acao);
@@ -204,7 +236,7 @@ async function executar(texto, de = '', ctx = {}) {
     }
 
     const e = comunidade.estadoDoPortao();
-    if (!e.temGrupo) return 'Não há grupo configurado (COMMUNITY_GROUP_JID).';
+    if (!e.temGrupo) return 'Não há grupo configurado. Mande *#grupo* dentro do grupo da comunidade.';
 
     const agora = e.aberto === undefined ? 'não sei ainda' : e.aberto ? 'aberto' : 'fechado';
     return (
@@ -214,7 +246,9 @@ async function executar(texto, de = '', ctx = {}) {
       `Abre ${e.abreHora}h · fecha ${e.fechaHora}h\n` +
       (e.ligado ? '' : '\n⚠️ O automático está desligado (#admin 9).\n') +
       (e.manualPorMin ? `\n_Mexido na mão: o automático volta em ${e.manualPorMin} min._\n` : '') +
-      `\n*#grupo abrir* · *#grupo fechar*`
+      `\nGrupo: ${grupoOficial.jid()}${grupoOficial.dadosRegistrados() ? ' (registrado pelo #grupo)' : ' (da env)'}\n` +
+      `Link: ${grupoOficial.url()}\n` +
+      `\n*#grupo abrir* · *#grupo fechar* · *#grupo env*`
     );
   }
 

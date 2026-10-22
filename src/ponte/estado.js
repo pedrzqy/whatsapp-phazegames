@@ -75,6 +75,11 @@ let dados = {
    * (cai na env VENDAS_GRUPO_JID e depois no nome do grupo).
    */
   grupoVendas: null,
+  /**
+   * Grupo oficial da comunidade registrado com #grupo: {jid, nome, url, em}.
+   * VENCE COMMUNITY_GROUP_JID / STORE_GROUP_URL (ver src/grupoOficial.js).
+   */
+  grupoComunidade: null,
   limites: {},
   disjuntor: { estado: 'fechado', motivo: null, printPath: null, falhasSeguidas: 0, abertoEm: null },
   seq: 0,

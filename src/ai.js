@@ -237,7 +237,7 @@ async function buildSystemPrompt() {
   // é exigido cedo demais no boot para arrastar isso junto no topo.
   const venderAqui = require('./chaves').ligada('vender');
   const siteUrl = config.store.url;
-  const groupUrl = config.store.groupUrl;
+  const groupUrl = require('./grupoOficial').url();
   const codigosLigados = require('./chaves').ligada('codigos');
   const codeUrl = config.store.codeUrl;
   const tutorialUrl = config.store.tutorialUrl;

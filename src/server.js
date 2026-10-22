@@ -49,6 +49,14 @@ app.post('/webhooks/evolution', async (req, res) => {
         data.message?.conversation ||
         data.message?.extendedTextMessage?.text ||
         '';
+      // ÚNICA exceção em grupo: o `#grupo` exato, digitado pelo dono no app do
+      // número da loja (fromMe). Nada mais de fromMe em grupo passa daqui.
+      if (/@g\.us$/i.test(jid) && /^#grupo$/i.test(txt.trim()) && !sender.foiDoBot(txt)) {
+        await handlers
+          .onGrupoComando({ grupo: jid, remetentes: [], texto: txt, proprio: true })
+          .catch((err) => console.error('[webhooks/evolution] onGrupoComando(fromMe):', err.message));
+        return;
+      }
       if (txt && !/@g\.us$|@broadcast$|@newsletter$/i.test(jid) && !sender.foiDoBot(txt)) {
         await handlers.onOperadorDigitou({ para: jid, texto: txt }).catch((err) => {
           console.error('[webhooks/evolution] onOperadorDigitou:', err.message);
@@ -102,7 +110,7 @@ app.post('/webhooks/evolution', async (req, res) => {
       // destino dos avisos de venda. O bot continua sem conversar em grupo.
       // Quem mandou vem em `participant` (às vezes o número real vem num campo
       // ao lado quando o principal é um @lid).
-      if (/^#staff\b/i.test(text.trim())) {
+      if (/^#(staff|grupo)\b/i.test(text.trim())) {
         await handlers
           .onGrupoComando({
             grupo: remoteJid,

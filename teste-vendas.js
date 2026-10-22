@@ -940,6 +940,89 @@ const CLI = '5541999998888';
     await op.executar('#staff off', OP);
   }
 
+  // ── #grupo: registra o grupo oficial da comunidade ────────────
+  bloco('#grupo registra o grupo oficial e vence a env');
+  {
+    const NOVO = '120363000000000555@g.us';
+    const ENV = '120363000000000444@g.us';
+    const URL_ENV = 'https://chat.whatsapp.com/ENVLINK';
+    const handlersG = require('./src/handlers');
+    const estadoG = require('./src/ponte/estado');
+    const go = require('./src/grupoOficial');
+    const evo = require('./src/evolution');
+    const cfgG = require('./src/config');
+    const com = require('./src/community');
+    const salvo = { jid: cfgG.community.groupJid, url: cfgG.store.groupUrl, dry: cfgG.community.dryRun, info: evo.infoDoGrupo, link: evo.linkDoGrupo, port: evo.portaoDoGrupo };
+    cfgG.community.groupJid = ENV; cfgG.store.groupUrl = URL_ENV; cfgG.community.dryRun = false;
+    estadoG.dados.grupoComunidade = null;
+    evo.infoDoGrupo = async () => ({ nome: 'Phaze Games - Grupo Aberto', tamanho: 612, souAdmin: true });
+    evo.linkDoGrupo = async () => 'https://chat.whatsapp.com/NOVOLINK';
+    const portoes = [];
+    evo.portaoDoGrupo = async (g, aberto) => { portoes.push({ g, aberto }); return {}; };
+
+    t('sem registro, vale a env', go.jid() === ENV && go.url() === URL_ENV);
+
+    enviadas = [];
+    const intruso = await handlersG.onGrupoComando({ grupo: NOVO, remetentes: ['5511900001111@s.whatsapp.net'], texto: '#grupo' });
+    t('#grupo de não-operador é ignorado', intruso === false && !estadoG.dados.grupoComunidade && go.jid() === ENV && enviadas.length === 0);
+    const comArg = await handlersG.onGrupoComando({ grupo: NOVO, remetentes: [OP + '@s.whatsapp.net'], texto: '#grupo abrir' });
+    t('#grupo com argumento em grupo não é tratado', comArg === false && go.jid() === ENV && portoes.length === 0);
+    const proprioOutro = await handlersG.onGrupoComando({ grupo: NOVO, remetentes: [], texto: 'oi galera', proprio: true });
+    t('fromMe com outro texto é ignorado', proprioOutro === false && go.jid() === ENV);
+    const proprioStaff = await handlersG.onGrupoComando({ grupo: NOVO, remetentes: [], texto: '#staff', proprio: true });
+    t('fromMe #staff NÃO passa (só #grupo)', proprioStaff === false && estadoG.dados.grupoVendas !== NOVO);
+
+    // Operador registra; a resposta vai ao PRIVADO, nunca ao grupo público.
+    const ok = await handlersG.onGrupoComando({ grupo: NOVO, remetentes: [OP + '@s.whatsapp.net'], texto: '#grupo' });
+    t('#grupo do operador registra', ok === true && estadoG.dados.grupoComunidade?.jid === NOVO);
+    t('  vence a env', go.jid() === NOVO && go.url() === 'https://chat.whatsapp.com/NOVOLINK');
+    const conf = enviadas.find((e) => e.para === OP);
+    t('  confirma no privado, com nome, JID, membros, admin e link',
+      conf && /Grupo Aberto/.test(conf.texto) && conf.texto.includes(NOVO) && /612/.test(conf.texto) && /loja é admin/.test(conf.texto) && /NOVOLINK/.test(conf.texto) && conf.texto.includes(ENV));
+    t('  e nada no grupo público', !enviadas.some((e) => e.para === NOVO));
+    t('  persistido no disco', JSON.parse(fsMod.readFileSync(pathMod.join(DATA_TESTE, 'ponte.json'), 'utf8')).grupoComunidade?.jid === NOVO);
+
+    // O dono mandando do número da loja (fromMe).
+    estadoG.dados.grupoComunidade = null;
+    enviadas = [];
+    const own = await handlersG.onGrupoComando({ grupo: NOVO, remetentes: [], texto: '#grupo', proprio: true });
+    t('#grupo fromMe (número da loja) registra', own === true && go.jid() === NOVO && enviadas.some((e) => e.para === OP) && !enviadas.some((e) => e.para === NOVO));
+
+    // Os consumidores leem o efetivo.
+    cfgG.community.enabled = true;
+    const st = com._estado();
+    st.slots = {}; st.lastPostAt = {}; st.ultimoPostGrupo = 0; st.grupoAberto = true;
+    enviadas = [];
+    await com.saudar('dia', '2032-05-05');
+    t('posts da comunidade vão ao grupo novo', enviadas.length === 1 && enviadas[0].para === NOVO);
+    await com.mexerNoPortao(false);
+    t('portão mexe no grupo novo, não no antigo', portoes.length === 1 && portoes[0].g === NOVO);
+    t('estado do portão antigo foi zerado ao trocar', (() => { go.registrar({ jid: ENV, nome: 'x', url: null }); return com._estado().grupoAberto === undefined; })());
+    go.registrar({ jid: NOVO, nome: 'n', url: 'https://chat.whatsapp.com/NOVOLINK' });
+    t('estatística do estado: a troca não zera os slots do dia', Object.keys(com._estado().slots).some((k) => k.includes('2032-05-05')));
+    const membrosPara = [];
+    evo.contarParticipantes = async (g) => { membrosPara.push(g); return 10; };
+    await require('./src/resumo').montar({ parcial: true });
+    t('resumo conta o grupo novo', membrosPara[0] === NOVO);
+    t('texto do banimento cita o link novo', require('./src/menu').resposta('banimento').includes('NOVOLINK'));
+
+    // Link falhou: mantém o da env e avisa.
+    estadoG.dados.grupoComunidade = null;
+    evo.linkDoGrupo = async () => { throw new Error('forbidden'); };
+    enviadas = [];
+    await handlersG.onGrupoComando({ grupo: NOVO, remetentes: [OP + '@s.whatsapp.net'], texto: '#grupo' });
+    t('link falhou: getter cai na env', go.url() === URL_ENV && go.jid() === NOVO);
+    t('  e a resposta avisa', /Não consegui buscar o link/.test(enviadas.find((e) => e.para === OP)?.texto || ''));
+
+    // #grupo env volta à env.
+    const volta = await require('./src/ponte/operador').executar('#grupo env', OP);
+    t('#grupo env volta ao da env', go.jid() === ENV && /env/.test(volta));
+
+    cfgG.community.groupJid = salvo.jid; cfgG.store.groupUrl = salvo.url; cfgG.community.dryRun = salvo.dry;
+    evo.infoDoGrupo = salvo.info; evo.linkDoGrupo = salvo.link; evo.portaoDoGrupo = salvo.port;
+    estadoG.dados.grupoComunidade = null;
+  }
+
   // ── Resumo do dia ─────────────────────────────────────────────
   bloco('resumo do dia');
   {
