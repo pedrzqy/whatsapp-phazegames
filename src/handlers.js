@@ -1223,25 +1223,36 @@ async function onNerixEvent(event) {
  * @returns {Promise<boolean>} true se tratou
  */
 async function onGrupoComando({ grupo, remetentes = [], texto, proprio = false }) {
-  const limpo = String(texto || '').trim();
+  const limpo = require('./textoMensagem').limparComando(texto);
   const ehStaff = /^#staff\b/i.test(limpo);
   const ehGrupo = /^#grupo$/i.test(limpo); // exato: nada de #grupo abrir em grupo
-  if (!ehStaff && !ehGrupo) return false;
-  const cfgOp = require('./ponte/config').operador;
-  const quem = remetentes.filter(Boolean).find((r) => cfgOp.ehOperador(r));
-  if (!quem && !(ehGrupo && proprio)) {
-    console.warn(`[grupo] ${limpo.slice(0, 8)} em ${grupo} de ${remetentes.filter(Boolean).join('/') || '?'} — não é operador, ignorei`);
+  if (!ehStaff && !ehGrupo) {
+    if (limpo.startsWith('#')) console.warn(`[grupo] "${limpo.slice(0, 20)}" em ${grupo}${proprio ? ' (fromMe)' : ''} — só #staff e #grupo sozinho valem em grupo, ignorei`);
     return false;
   }
+  const cfgOp = require('./ponte/config').operador;
+  if (!cfgOp.numeros.length) {
+    // Sem operador não há para quem confirmar: o #grupo registraria e ninguém ficaria sabendo.
+    console.error('[grupo] ATENÇÃO: PONTE_OPERADOR_NUMERO está VAZIO — não há para quem mandar a confirmação do ' + limpo.slice(0, 8));
+  }
+  const quem = remetentes.filter(Boolean).find((r) => cfgOp.ehOperador(r));
+  if (!quem && !(ehGrupo && proprio)) {
+    console.warn(`[grupo] ${limpo.slice(0, 8)} em ${grupo} de ${remetentes.filter(Boolean).join('/') || '?'} — não é operador (lista: ${cfgOp.numeros.join(', ') || 'vazia'}), ignorei`);
+    return false;
+  }
+  console.log(`[grupo] ${limpo.slice(0, 8)} em ${grupo} aceito (${quem ? `operador ${quem}` : 'fromMe, número da loja'})`);
   try {
     const resposta = await operador.executar(limpo, quem || 'proprio', { grupo });
     if (!resposta) return true;
     if (ehStaff) {
       await sender.send(grupo, resposta, { typing: false });
     } else {
+      // avisarOperador loga a falha de cada número (para quem não chegou).
       await vendas.avisarOperador(resposta, { typing: false });
       const staff = await vendas.grupoDeVendas().catch(() => null);
-      if (staff && staff !== grupo) await sender.send(staff, resposta, { typing: false }).catch(() => {});
+      if (staff && staff !== grupo) {
+        await sender.send(staff, resposta, { typing: false }).catch((err) => console.error(`[grupo] confirmação não chegou ao grupo da equipe ${staff}:`, err.message));
+      }
     }
   } catch (err) {
     console.error(`[grupo] ${limpo.slice(0, 8)} falhou:`, err.message);

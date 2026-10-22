@@ -517,6 +517,28 @@ function webhookDe(numero, message, pushName = 'Cliente') {
     await entregar({ data: { key: { remoteJid: GRUPO_PUB, fromMe: true }, message: { conversation: '#grupo' } } });
     t('#grupo fromMe no grupo registra', estadoGr.dados.grupoComunidade?.jid === GRUPO_PUB && goGr.jid() === GRUPO_PUB);
     t('  e a confirmação vai ao privado, nunca ao grupo', enviadas.length > 0 && !enviadas.some((e) => e.para === GRUPO_PUB));
+    // Variações que o WhatsApp/iOS produzem: envelope de mensagem temporária,
+    // maiúscula, invisíveis colados, "ver uma vez", edição.
+    const variantes = [
+      ['ephemeralMessage', { ephemeralMessage: { message: { extendedTextMessage: { text: '#grupo' } } } }],
+      ['maiúscula + zero-width + espaço', { conversation: '#Grupo​  ' }],
+      ['viewOnceMessageV2', { viewOnceMessageV2: { message: { conversation: '#grupo' } } }],
+      ['editedMessage', { editedMessage: { message: { protocolMessage: { editedMessage: { conversation: '#grupo' } } } } }],
+    ];
+    for (const [nome, message] of variantes) {
+      estadoGr.dados.grupoComunidade = null;
+      enviadas.length = 0;
+      await entregar({ data: { key: { remoteJid: GRUPO_PUB, fromMe: true }, message } });
+      t(`#grupo fromMe com ${nome} registra`, estadoGr.dados.grupoComunidade?.jid === GRUPO_PUB && enviadas.some((e) => e.para !== GRUPO_PUB));
+    }
+    // Mesma extração no caminho normal (não-fromMe): operador dentro do grupo temporário.
+    estadoGr.dados.grupoComunidade = null;
+    enviadas.length = 0;
+    await entregar({ data: { key: { remoteJid: GRUPO_PUB, fromMe: false, participant: '5541999999999@s.whatsapp.net' }, message: { ephemeralMessage: { message: { extendedTextMessage: { text: '#grupo' } } } } } });
+    t('#grupo de operador em grupo temporário registra', estadoGr.dados.grupoComunidade?.jid === GRUPO_PUB);
+    const { textoDaMensagem, limparComando } = require('./src/textoMensagem');
+    t('textoDaMensagem lê legenda de foto dentro de envelope', textoDaMensagem({ ephemeralMessage: { message: { imageMessage: { caption: 'oi' } } } }) === 'oi');
+    t('limparComando tira invisíveis', limparComando('﻿ #grupo‎ ') === '#grupo');
     estadoGr.dados.grupoComunidade = null;
     enviadas.length = 0;
     evoGr.infoDoGrupo = salvoGr.i; evoGr.linkDoGrupo = salvoGr.l;

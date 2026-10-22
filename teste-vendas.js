@@ -952,7 +952,7 @@ const CLI = '5541999998888';
     const evo = require('./src/evolution');
     const cfgG = require('./src/config');
     const com = require('./src/community');
-    const salvo = { jid: cfgG.community.groupJid, url: cfgG.store.groupUrl, dry: cfgG.community.dryRun, info: evo.infoDoGrupo, link: evo.linkDoGrupo, port: evo.portaoDoGrupo };
+    const salvo = { jid: cfgG.community.groupJid, url: cfgG.store.groupUrl, dry: cfgG.community.dryRun, info: evo.infoDoGrupo, link: evo.linkDoGrupo, port: evo.portaoDoGrupo, todos: evo.fetchAllGroups, key: cfgG.evolution.apiKey };
     cfgG.community.groupJid = ENV; cfgG.store.groupUrl = URL_ENV; cfgG.community.dryRun = false;
     estadoG.dados.grupoComunidade = null;
     evo.infoDoGrupo = async () => ({ nome: 'Phaze Games - Grupo Aberto', tamanho: 612, souAdmin: true });
@@ -1014,12 +1014,38 @@ const CLI = '5541999998888';
     t('link falhou: getter cai na env', go.url() === URL_ENV && go.jid() === NOVO);
     t('  e a resposta avisa', /Não consegui buscar o link/.test(enviadas.find((e) => e.para === OP)?.texto || ''));
 
+    // #grupo usar / listar: plano B no privado, achando o grupo pelo nome.
+    estadoG.dados.grupoComunidade = null;
+    evo.linkDoGrupo = async () => 'https://chat.whatsapp.com/NOVOLINK';
+    cfgG.evolution.apiKey = 'x';
+    evo.fetchAllGroups = async () => [
+      { id: '1@g.us', subject: 'Phaze Games - STAFF' },
+      { id: NOVO, subject: 'Phaze Games - Grupo Aberto' },
+      { id: '3@g.us', subject: 'Família' },
+    ];
+    const opG = require('./src/ponte/operador');
+    const lista = await opG.executar('#grupo listar', OP);
+    t('#grupo listar mostra os nomes', /Grupo Aberto/.test(lista) && /STAFF/.test(lista) && !estadoG.dados.grupoComunidade);
+    const nenhum = await opG.executar('#grupo usar xyz', OP);
+    t('#grupo usar sem achado: avisa e lista', /Nenhum grupo/.test(nenhum) && /STAFF/.test(nenhum) && !estadoG.dados.grupoComunidade);
+    const varios = await opG.executar('#grupo usar phaze', OP);
+    t('#grupo usar ambíguo: lista e não registra', /2 grupos/.test(varios) && !estadoG.dados.grupoComunidade);
+    const vazio = await opG.executar('#grupo usar', OP);
+    t('#grupo usar sem nome: explica', /parte do nome/.test(vazio) && !estadoG.dados.grupoComunidade);
+    const usou = await opG.executar('#grupo usar GRUPO abérto', OP);
+    t('#grupo usar (sem acento/caixa) registra', estadoG.dados.grupoComunidade?.jid === NOVO && go.jid() === NOVO);
+    t('  confirmação igual à de dentro do grupo', /Grupo oficial registrado/.test(usou) && /Grupo Aberto/.test(usou) && /loja é admin/.test(usou) && /NOVOLINK/.test(usou) && usou.includes(NOVO));
+    t('  #ajuda cita o #grupo usar', /#grupo usar/.test(await opG.executar('#ajuda', OP)));
+    evo.fetchAllGroups = async () => { throw new Error('evolution fora'); };
+    t('  Evolution fora: erro claro', /evolution fora/.test(await opG.executar('#grupo usar x', OP)));
+    estadoG.dados.grupoComunidade = null;
+
     // #grupo env volta à env.
     const volta = await require('./src/ponte/operador').executar('#grupo env', OP);
     t('#grupo env volta ao da env', go.jid() === ENV && /env/.test(volta));
 
     cfgG.community.groupJid = salvo.jid; cfgG.store.groupUrl = salvo.url; cfgG.community.dryRun = salvo.dry;
-    evo.infoDoGrupo = salvo.info; evo.linkDoGrupo = salvo.link; evo.portaoDoGrupo = salvo.port;
+    evo.infoDoGrupo = salvo.info; evo.linkDoGrupo = salvo.link; evo.portaoDoGrupo = salvo.port; evo.fetchAllGroups = salvo.todos; cfgG.evolution.apiKey = salvo.key;
     estadoG.dados.grupoComunidade = null;
   }
 

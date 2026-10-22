@@ -35,7 +35,7 @@ const AJUDA = [
   '*Comandos*',
   '',
   '*#admin* — painel: liga e desliga cada função',
-  '*#grupo* — mande DENTRO do grupo da comunidade (do número da loja ou do seu): ele vira o grupo oficial, vence a env, e a confirmação vem aqui no privado · no privado: *#grupo abrir* · *#grupo fechar* · *#grupo env* (volta ao da env)',
+  '*#grupo* — mande DENTRO do grupo da comunidade (do número da loja ou do seu): ele vira o grupo oficial, vence a env, e a confirmação vem aqui no privado · no privado: *#grupo listar* (os grupos do número da loja) · *#grupo usar <parte do nome>* (registra sem precisar mandar de dentro do grupo) · *#grupo abrir* · *#grupo fechar* · *#grupo env* (volta ao da env)',
   '*#staff* — mande DENTRO do grupo da equipe: as vendas passam a ser avisadas lá · *#staff off* volta ao privado · *#staff teste*',
   '*#status* — testa tudo e diz o que está errado',
   '*#resumo* — o resumo do dia até agora (o completo sai sozinho à noite no grupo da equipe)',
@@ -61,6 +61,48 @@ const AJUDA = [
   '*#historico* — exporta a conversa da coleta para estudar o padrão',
   '*#historico enviar* — manda o arquivo já exportado aqui pelo WhatsApp',
 ].join('\n');
+
+const normalizarNome = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+
+/** Grupos de que o número da loja participa: { lista: [{ jid, nome }] }, ou { erro }. */
+async function gruposDaEvolution() {
+  try {
+    const todos = await evolution.fetchAllGroups();
+    return { lista: todos.filter((g) => g && g.id).map((g) => ({ jid: g.id, nome: g.subject || g.name || '' })) };
+  } catch (err) {
+    console.warn('[grupo] fetchAllGroups falhou:', err.message);
+    return { erro: err.message };
+  }
+}
+
+/**
+ * Registra o grupo como o oficial da comunidade e devolve a confirmação.
+ * Serve ao #grupo de dentro do grupo e ao #grupo usar do privado: mesmo caminho.
+ * O JID vem da mensagem (ou da busca por nome). O registro vence a env
+ * COMMUNITY_GROUP_JID (o dono opera do celular e não mexe na env) e fica em
+ * ponte.json, no volume. O link é buscado na Evolution; se falhar, vale o
+ * STORE_GROUP_URL.
+ */
+async function registrarGrupoOficial(jid, nomeConhecido = '') {
+  const grupoOficial = require('../grupoOficial');
+  const info = await evolution.infoDoGrupo(jid).catch((err) => ({ erro: err.message }));
+  const link = await evolution.linkDoGrupo(jid).catch((err) => { console.warn('[grupo] link:', err.message); return null; });
+  const antes = grupoOficial.jid();
+  const nome = info.nome || nomeConhecido || '';
+  grupoOficial.registrar({ jid, nome, url: link });
+  console.log(`[grupo] oficial registrado: ${jid} "${nome}"`);
+  return (
+    `✅ Grupo oficial registrado${nome ? `: *${nome}*` : ''}\n` +
+    `JID: ${jid}\n` +
+    (info.tamanho != null ? `Membros: ${info.tamanho}\n` : '') +
+    (info.erro ? `⚠️ Não consegui ler os dados do grupo (${info.erro}).\n` : '') +
+    (info.souAdmin === true ? 'O número da loja é admin: o horário (abrir/fechar) funciona.\n'
+      : info.souAdmin === false ? '⚠️ O número da loja NÃO é admin deste grupo: o horário não vai abrir/fechar. Promova o número da loja a admin.\n'
+        : 'Admin: não consegui conferir. Se o horário não mexer no grupo, promova o número da loja a admin.\n') +
+    (link ? `Link: ${link}\n` : `⚠️ Não consegui buscar o link (precisa ser admin). Continua valendo o da env: ${grupoOficial.url()}\n`) +
+    (antes && antes !== jid ? `\nO grupo anterior (${antes}) não recebe mais nada.` : '')
+  );
+}
 
 /** Quanto tempo o operador fica valendo como cliente depois do #teste. */
 const TESTE_MS = 30 * 60 * 1000;
@@ -201,21 +243,42 @@ async function executar(texto, de = '', ctx = {}) {
     // o STORE_GROUP_URL.
     if (ctx.grupo) {
       if (acao) return '';
-      const jid = ctx.grupo;
-      const info = await evolution.infoDoGrupo(jid).catch((err) => ({ erro: err.message }));
-      const link = await evolution.linkDoGrupo(jid).catch((err) => { console.warn('[grupo] link:', err.message); return null; });
-      const antes = grupoOficial.jid();
-      grupoOficial.registrar({ jid, nome: info.nome || '', url: link });
+      return registrarGrupoOficial(ctx.grupo);
+    }
+
+    // PLANO B, no privado: quando o #grupo de dentro do grupo não chega (a
+    // Evolution pode não entregar mensagem de grupo, groupsIgnore=true), o
+    // operador acha o grupo pelo NOME e registra daqui, igual.
+    if (acao === 'listar' || acao === 'lista') {
+      const r = await gruposDaEvolution();
+      if (r.erro) return `Não consegui listar os grupos: ${r.erro}`;
+      if (!r.lista.length) return 'O número da loja não aparece em nenhum grupo.';
       return (
-        `✅ Grupo oficial registrado${info.nome ? `: *${info.nome}*` : ''}\n` +
-        `JID: ${jid}\n` +
-        (info.tamanho != null ? `Membros: ${info.tamanho}\n` : '') +
-        (info.erro ? `⚠️ Não consegui ler os dados do grupo (${info.erro}).\n` : '') +
-        (info.souAdmin === true ? 'O número da loja é admin: o horário (abrir/fechar) funciona.\n'
-          : info.souAdmin === false ? '⚠️ O número da loja NÃO é admin deste grupo: o horário não vai abrir/fechar. Promova o número da loja a admin.\n'
-            : 'Admin: não consegui conferir. Se o horário não mexer no grupo, promova o número da loja a admin.\n') +
-        (link ? `Link: ${link}\n` : `⚠️ Não consegui buscar o link (precisa ser admin). Continua valendo o da env: ${grupoOficial.url()}\n`) +
-        (antes && antes !== jid ? `\nO grupo anterior (${antes}) não recebe mais nada.` : '')
+        `*Grupos do número da loja* (${r.lista.length})\n` +
+        r.lista.slice(0, 40).map((g) => `• ${g.nome || '(sem nome)'}`).join('\n') +
+        (r.lista.length > 40 ? `\n… e mais ${r.lista.length - 40}` : '') +
+        '\n\n_Para registrar: *#grupo usar <parte do nome>*_'
+      );
+    }
+    if (acao === 'usar') {
+      const busca = normalizarNome(argumento);
+      if (!busca) return 'Diga parte do nome do grupo: *#grupo usar Grupo Aberto*. Para ver os nomes: *#grupo listar*.';
+      const r = await gruposDaEvolution();
+      if (r.erro) return `Não consegui listar os grupos: ${r.erro}`;
+      const achados = r.lista.filter((g) => normalizarNome(g.nome).includes(busca));
+      if (achados.length === 1) return registrarGrupoOficial(achados[0].jid, achados[0].nome);
+      if (achados.length > 1) {
+        return (
+          `Achei ${achados.length} grupos com "${argumento}":\n` +
+          achados.slice(0, 15).map((g) => `• ${g.nome}`).join('\n') +
+          '\n\n_Escreva mais do nome para eu saber qual: *#grupo usar <nome mais completo>*._'
+        );
+      }
+      return (
+        `Nenhum grupo com "${argumento}" no nome.\n` +
+        (r.lista.length
+          ? 'Alguns que existem:\n' + r.lista.slice(0, 10).map((g) => `• ${g.nome || '(sem nome)'}`).join('\n') + '\n\n_*#grupo listar* mostra todos._'
+          : 'O número da loja não aparece em nenhum grupo.')
       );
     }
 

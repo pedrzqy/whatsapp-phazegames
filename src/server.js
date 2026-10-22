@@ -13,6 +13,7 @@ const bracoRouter = require('./ponte/braco');
 const transcricao = require('./transcricao');
 const posvenda = require('./posvenda');
 const chaves = require('./chaves');
+const { textoDaMensagem, limparComando } = require('./textoMensagem');
 
 const app = express();
 // 12mb: a foto do cliente chega em base64 pela rota do braço, e base64 infla ~33%.
@@ -45,13 +46,19 @@ app.post('/webhooks/evolution', async (req, res) => {
     // respondendo por cima dele.
     if (key.fromMe) {
       const jid = key.remoteJid || '';
-      const txt =
-        data.message?.conversation ||
-        data.message?.extendedTextMessage?.text ||
-        '';
+      // Lê também de dentro dos envelopes (mensagens temporárias, editada...).
+      const txt = textoDaMensagem(data.message);
+      const cmd = limparComando(txt);
+      // DIAGNÓSTICO: o dono mandou um #comando num grupo e "nada aconteceu".
+      // Esta linha diz se a mensagem ao menos CHEGOU no webhook.
+      if (/@g\.us$/i.test(jid) && cmd.startsWith('#')) {
+        console.log(`[grupo] fromMe em ${jid}: "${cmd.slice(0, 40)}"`);
+      }
       // ÚNICA exceção em grupo: o `#grupo` exato, digitado pelo dono no app do
       // número da loja (fromMe). Nada mais de fromMe em grupo passa daqui.
-      if (/@g\.us$/i.test(jid) && /^#grupo$/i.test(txt.trim()) && !sender.foiDoBot(txt)) {
+      // (Maiúscula e invisíveis do iOS não atrapalham; o bot nunca envia um
+      // texto que seja só "#grupo", então o filtro de eco não o pega.)
+      if (/@g\.us$/i.test(jid) && /^#grupo$/i.test(cmd) && !sender.foiDoBot(cmd)) {
         await handlers
           .onGrupoComando({ grupo: jid, remetentes: [], texto: txt, proprio: true })
           .catch((err) => console.error('[webhooks/evolution] onGrupoComando(fromMe):', err.message));
@@ -70,24 +77,10 @@ app.post('/webhooks/evolution', async (req, res) => {
     if (/@broadcast$|@newsletter$/i.test(remoteJid)) return;
 
     const message = data.message || {};
-    const text =
-      message.conversation ||
-      message.extendedTextMessage?.text ||
-      // Foto com legenda: o texto do cliente vem no caption, não em conversation.
-      message.imageMessage?.caption ||
-      // Toque numa opção do MENU EM LISTA. Não vem em conversation: o WhatsApp
-      // manda uma mensagem de resposta própria, e sem estas linhas o texto
-      // chegava vazio — o cliente tocava no menu e o bot não reagia a nada.
-      //
-      // O rowId vem primeiro porque é o número da opção (ver menu.js), que
-      // resolve pelo mesmo caminho de quem digitou. O título é reserva para as
-      // versões que não mandam o id.
-      message.listResponseMessage?.singleSelectReply?.selectedRowId ||
-      message.listResponseMessage?.title ||
-      message.buttonsResponseMessage?.selectedButtonId ||
-      message.buttonsResponseMessage?.selectedDisplayText ||
-      message.templateButtonReplyMessage?.selectedId ||
-      '';
+    // Mesmo extrator do fromMe: abre os envelopes (temporárias, editada...) e lê
+    // legenda de foto e toque em menu/botão.
+    const text = textoDaMensagem(message);
+
 
     // GRUPO: o bot NÃO responde. Nunca.
     //
@@ -110,12 +103,12 @@ app.post('/webhooks/evolution', async (req, res) => {
       // destino dos avisos de venda. O bot continua sem conversar em grupo.
       // Quem mandou vem em `participant` (às vezes o número real vem num campo
       // ao lado quando o principal é um @lid).
-      if (/^#(staff|grupo)\b/i.test(text.trim())) {
+      if (/^#(staff|grupo)\b/i.test(limparComando(text))) {
         await handlers
           .onGrupoComando({
             grupo: remoteJid,
             remetentes: [key.participant, key.participantAlt, data.participant, data.senderPn],
-            texto: text,
+            texto: limparComando(text),
           })
           .catch((err) => console.error('[webhooks/evolution] onGrupoComando:', err.message));
       }
