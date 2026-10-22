@@ -379,17 +379,19 @@ async function genAvaliacao() {
 // sozinho na própria linha para o WhatsApp montar a prévia e o toque funcionar.
 const AFILIADOS_LINK = 'https://phazegames.com/account/affiliate';
 const VARIANTES_AFILIADOS = [
-  'Já pensou em fazer uma grana extra com jogos, sem sair de casa?\n\n' +
-    'A Phaze Games agora tem um programa de afiliados: você indica os jogos para quem você conhece e recebe uma comissão em cada venda feita pelo seu link. É só compartilhar do jeito que você já faz no dia a dia. 💰\n\n' +
-    'Quer fazer parte da nossa equipe? O cadastro é rápido e gratuito:\n' +
+  'Já pensou em tirar até R$ 3 mil por mês vendendo jogos, direto do celular? 💰\n\n' +
+    'Com o programa de afiliados da Phaze Games, você divulga os jogos mais procurados do momento e ganha comissão em cada venda feita pelo seu link.\n\n' +
+    'São produtos fáceis de vender: preço que cabe no bolso, entrega rápida e garantia. Quem joga sempre tem um amigo querendo um jogo novo.\n\n' +
+    'Comece hoje mesmo, é só se cadastrar:\n' +
     AFILIADOS_LINK,
-  'Quem joga conhece gente que também joga, e agora isso pode render uma renda extra.\n\n' +
-    'No programa de afiliados da Phaze Games você divulga os jogos, acompanha suas vendas e ganha comissão sobre cada uma. Sem horário fixo e sem sair de casa, no seu ritmo. 🎮\n\n' +
-    'Entre para a equipe e comece hoje mesmo:\n' +
+  'Renda extra de verdade: com a Phaze Games dá pra tirar até R$ 3 mil por mês indicando jogos. 🎮\n\n' +
+    'Você não precisa de estoque nem se preocupa com entrega, a gente cuida de tudo. É só compartilhar o seu link no WhatsApp, no Instagram ou nos grupos, e a comissão cai a cada venda.\n\n' +
+    'Jogo de Nintendo e Steam vende fácil, todo mundo quer. Aproveita:\n' +
     AFILIADOS_LINK,
-  'Que tal transformar a sua paixão por videogame em uma graninha extra?\n\n' +
-    'Como afiliado da Phaze Games, você compartilha o seu link com amigos, grupos e redes sociais e ganha uma comissão a cada jogo vendido. Assista ao vídeo e veja como é simples. ✨\n\n' +
-    'Para se cadastrar, é só acessar:\n' +
+  'Você já indica jogo pros amigos de graça. Que tal ganhar por isso? 🔥\n\n' +
+    'Como afiliado da Phaze Games, cada venda pelo seu link vira comissão no seu bolso, e dá pra chegar a até R$ 3 mil por mês.\n\n' +
+    'Os jogos praticamente se vendem sozinhos: preço baixo, entrega rápida e garantia. A gente cuida de tudo, você só divulga.\n\n' +
+    'Vagas abertas, cadastre-se agora:\n' +
     AFILIADOS_LINK,
 ];
 
