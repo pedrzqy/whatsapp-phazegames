@@ -182,11 +182,14 @@ function validarUsuario(texto) {
   if (!bruto) {
     return { valido: false, usuario: null, motivo: 'vazio' };
   }
-  // E-mail de um domínio que SÓ o fornecedor 2 atende (ex.: @exctp.com): é o
+  // E-mail de um domínio que SÓ o fornecedor 2 atende (ex.: @exrctp.com): é o
   // login dessas contas e vale inteiro. Qualquer outro e-mail continua
   // rejeitado logo abaixo (cliente mandando o e-mail PESSOAL por engano).
-  if (/^[A-Za-z0-9._+-]{1,40}@[A-Za-z0-9.-]+$/.test(bruto) && roteamento.ehDoFornecedor2(bruto)) {
-    return { valido: true, usuario: bruto, motivo: null };
+  // Aceita com erro de digitação (sem .com, "@@", maiúscula) e devolve o e-mail
+  // já normalizado, que é o que segue para o roteamento e para o fornecedor.
+  const email2 = roteamento.normalizarLogin(bruto);
+  if (email2) {
+    return { valido: true, usuario: email2, motivo: null };
   }
   if (bruto.length > 20) {
     return { valido: false, usuario: null, motivo: 'passa de 20 caracteres' };

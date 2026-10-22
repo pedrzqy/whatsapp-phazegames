@@ -222,6 +222,14 @@ t('e-mail do dominio da loja 2 aceito', codigo.validarUsuario('joao.silva@exctp.
 t('  mesmo em maiuscula', codigo.validarUsuario('Joao@EXCTP.COM').valido === true);
 t('  mas dominio parecido rejeitado', codigo.validarUsuario('joao@exctp.com.br').valido === false);
 t('  extrai de frase', codigo.extrairUsuario('meu login e joao1@exctp.com') === 'joao1@exctp.com');
+t('dominio exrctp.com (com R) aceito', codigo.validarUsuario('2ba4l@exrctp.com').valido === true);
+t('  sem o .com vira o e-mail completo', codigo.validarUsuario('2ba4l@exrctp').usuario === '2ba4l@exrctp.com');
+t('  "@@", espacos e maiuscula', codigo.validarUsuario('2ba4l@@exrctp.com').usuario === '2ba4l@exrctp.com'
+  && codigo.validarUsuario(' 2BA4L@EXRCTP.COM ').usuario === '2ba4l@exrctp.com');
+t('  .con digitado errado', codigo.validarUsuario('x@exrctp.con').usuario === 'x@exrctp.com');
+t('  ponto no fim', codigo.validarUsuario('x@exrctp.com.').usuario === 'x@exrctp.com');
+t('  gmail continua rejeitado', codigo.validarUsuario('x@gmail.com').valido === false);
+t('  exctp sem .com tambem', codigo.validarUsuario('x@exctp').usuario === 'x@exctp.com');
 
 bloco('extrair usuário de frase solta');
 t('extrai de frase', codigo.extrairUsuario('meu usuario e rrrtsr223') === 'rrrtsr223');
@@ -3922,6 +3930,8 @@ const OP = '5541999999999';
     t('  nem espaco sobrando', roteMod.chatTituloPara(' fulano@exctp.com ') === TIT2);
     t('outro dominio vai para a loja 1', roteMod.chatTituloPara('fulano@gmail.com') === TIT1);
     t('  dominio parecido nao conta', roteMod.chatTituloPara('x@notexctp.com') === TIT1 && roteMod.chatTituloPara('x@exctp.com.br') === TIT1);
+    t('  exrctp sem .com tambem roteia (e normaliza)', roteMod.chatTituloPara('2ba4l@exrctp') === TIT2
+      && roteMod.normalizarLogin('2ba4l@exrctp') === '2ba4l@exrctp.com');
     t('  login que nao e e-mail vai para a loja 1', roteMod.chatTituloPara('ttxx7887') === TIT1);
 
     // Pelo fluxo real: a tarefa carrega a conversa e o braço recebe ela.

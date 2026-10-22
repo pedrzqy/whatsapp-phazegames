@@ -226,7 +226,7 @@ router.post('/codigo', async (req, res) => {
 
     const v = codigo.validarUsuario(String(b.login || '').trim());
     if (!v.valido) {
-      return recusa('Confira o login: coloque só o login da conta, igual aparece na tela, sem espaços (algo como *rrrtsr223*).');
+      return recusa('Confira o login: coloque o login da conta igual aparece na mensagem de entrega (algo como *rrrtsr223* ou o e-mail da conta).');
     }
 
     const foto = String(b.imagemBase64 || '').replace(/^data:[^;]+;base64,/, '');

@@ -25,7 +25,7 @@ module.exports = {
     // Domínios de e-mail (lista por vírgula, sem @) que SÓ esse fornecedor
     // atende. Todo o resto continua no principal. ATENÇÃO: se a variável já
     // existe no Environment do serviço, ela VENCE este padrão.
-    dominios2: (process.env.PONTE_SELLER2_DOMINIOS ?? 'exctp.com')
+    dominios2: (process.env.PONTE_SELLER2_DOMINIOS ?? 'exrctp.com,exctp.com')
       .split(',')
       .map((d) => d.trim().toLowerCase().replace(/^@/, ''))
       .filter(Boolean),

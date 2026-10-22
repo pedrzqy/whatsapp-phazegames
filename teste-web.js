@@ -129,6 +129,19 @@ const PROIBIDAS = /fornecedor|taobao|\bbot\b|rob[oô]|autom[aá]tic|script|—|#
   t('nada foi para o WhatsApp do cliente', !paraOperador.some((x) => x.includes('482913')));
   t('vez liberada', !fila.ativo());
 
+  bloco('login de e-mail do fornecedor 2');
+  r = await pedir('x@gmail.com');
+  t('e-mail pessoal continua recusado', r.j.aceito === false && !r.j.id, r.j.mensagem);
+  t('  e a mensagem fala do e-mail da conta', /e-mail da conta/.test(r.j.mensagem || ''));
+  r = await pedir(' 2BA4L@@exrctp ');
+  const idMail = r.j.id;
+  t('2ba4l@exrctp (sem .com) é aceito', r.j.aceito === true && Boolean(idMail), r.j.mensagem);
+  const atMail = dados.atendimentos.find((x) => x.from === idMail);
+  t('  guardado como e-mail completo', atMail && atMail.usuario === '2ba4l@exrctp.com', atMail && atMail.usuario);
+  const tkMail = dados.tarefas.find((x) => x.usuario === '2ba4l@exrctp.com');
+  t('  vai para a conversa do fornecedor 2', tkMail && tkMail.chatTitulo === require('./src/ponte/config').vendedor.chatTitulo2, JSON.stringify(tkMail));
+  await bracoResponde('482914');
+
   bloco('fila com duas pessoas');
   const a = (await pedir('aaaa1111')).j.id;
   const b = (await pedir('bbbb2222')).j.id;
