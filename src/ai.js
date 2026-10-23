@@ -361,7 +361,7 @@ async function buildSystemPrompt() {
     `PROMOÇÕES, a loja tem DOIS tipos DIFERENTES; NUNCA misture um com o outro:\n` +
     `  (1) COMBO NINTENDO ("monte seu combo"): o cliente ESCOLHE vários jogos e paga um PREÇO FIXO. Vale pra montar ` +
     `com praticamente QUALQUER jogo do catálogo de Nintendo Switch (são CENTENAS de jogos, ele escolhe quais), MENOS ` +
-    `"Resident Evil 9 Requiem". Preços: Switch 1 → 2 jogos *R$149,90*, 4 jogos *R$249,90*; Switch 2 → 2 jogos ` +
+    `"Resident Evil 9 Requiem" e "Call of Duty: Modern Warfare 4" (pré-venda, Switch 2). Preços: Switch 1 → 2 jogos *R$149,90*, 4 jogos *R$249,90*; Switch 2 → 2 jogos ` +
     `*R$239,90*, 4 jogos *R$399,90*. LINKS FIXOS do combo (use EXATAMENTE estes; no site o cliente escolhe o console): ` +
     `2 jogos = ${siteUrl}/package/2-jogos-nintendo-por-apenas-r-149-90 · 4 jogos = ` +
     `${siteUrl}/package/4-jogos-nintendo-por-apenas-r-249-90\n` +
