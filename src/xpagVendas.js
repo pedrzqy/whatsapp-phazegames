@@ -40,9 +40,19 @@ function mascarar(doc) {
   return d.length <= 4 ? '****' : `****${d.slice(-4)}`;
 }
 
+/**
+ * Status que vale como pago. A doc da XPag manda creditar COP e CLP em
+ * "confirmed" E "completed"; no Mexico so "confirmed" vale (nao muda nada).
+ */
+function statusPago(status, moedaCod) {
+  if (status === 'confirmed') return true;
+  const m = minus(moedaCod).toUpperCase();
+  return status === 'completed' && (m === 'COP' || m === 'CLP');
+}
+
 /** O estado real e um recebimento confirmado? */
-function confirmada(tx) {
-  return !!tx && tx.status === 'confirmed' && (!tx.tipo || tx.tipo === 'cashin');
+function confirmada(tx, moedaCod = null) {
+  return !!tx && statusPago(tx.status, tx.moeda || moedaCod) && (!tx.tipo || tx.tipo === 'cashin');
 }
 
 /** Chave unica da venda: e2e (por pagamento) > transacao > external_id. */
@@ -155,7 +165,7 @@ function textoParaEquipe({ tx, vinculo, numero, avisado, chave, manual }) {
  * Devolve { ok, novo, chave, motivo }.
  */
 async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manual = false, extra = null } = {}) {
-  if (!confirmada(tx)) return { ok: false, motivo: `status ${tx?.status || 'desconhecido'}: so recebimento confirmado vira venda` };
+  if (!confirmada(tx, fallbackMoeda)) return { ok: false, motivo: `status ${tx?.status || 'desconhecido'}: so recebimento confirmado vira venda` };
   const moedaCod = (tx.moeda || fallbackMoeda || '').toUpperCase();
   if (!moedaCod) return { ok: false, motivo: 'a XPag nao informou a moeda' };
   if (!Number.isFinite(tx.valor) || tx.valor <= 0) return { ok: false, motivo: 'a XPag nao informou o valor' };
@@ -273,6 +283,13 @@ async function processarRepasse(corpo) {
   const c = corpo || {};
   const evento = minus(c.evento).toLowerCase();
 
+  // Defesa em profundidade (a rota ja barra): repasse so vale com o segredo da
+  // URL configurado. Sem ele nao ha como saber que veio do phaze-xpag.
+  if (!config.webhook.xpagSecret) {
+    console.error('[xpag] repasse RECUSADO: XPAG_WEBHOOK_SECRET vazio (qualquer um poderia forjar uma venda).');
+    return { ok: false, motivo: 'XPAG_WEBHOOK_SECRET vazio: repasse recusado' };
+  }
+
   if (evento === 'disputa' || evento === 'saque_falhou') {
     const linhas = evento === 'disputa'
       ? ['🚨 *Disputa (MED) na XPag*', `Pedido: ${textoCurto(c.pedido) || '(sem pedido)'}`, c.transacao ? `Transação: ${textoCurto(c.transacao)}` : '', 'Uma entrada já confirmada foi contestada. *Não entregue* se ainda não entregou; veja no painel da XPag.']
@@ -300,7 +317,7 @@ async function processarRepasse(corpo) {
     if (e2e) real = await xpag.consultar({ e2e });
     if ((!real || !real.ok) && transacao) real = await xpag.consultar({ transacao, e2e: e2e || undefined });
     if (!real || !real.ok) return { ok: false, motivo: `nao consegui conferir na XPag: ${real?.codigo || 'sem_codigo'}` };
-    if (real.status !== 'confirmed' && !(Array.isArray(real.pagamentos) && real.pagamentos.some((p) => p.status === 'confirmed' && p.e2e === e2e))) {
+    if (!statusPago(real.status, real.moeda || moedaCod) && !(Array.isArray(real.pagamentos) && real.pagamentos.some((p) => statusPago(p.status, real.moeda || moedaCod) && p.e2e === e2e))) {
       return { ok: false, motivo: `aviso divergente: o repasse dizia pago e a consulta diz ${real.status}` };
     }
     if (Number.isFinite(valor) && Number.isFinite(real.valor) && Math.abs(valor - real.valor) > 0.01) {
@@ -405,4 +422,4 @@ async function comando(args) {
   return saidas.join('\n\n');
 }
 
-module.exports = { registrar, processarWebhook, processarRepasse, consultarCodigo, comando, confirmada, mascarar, chaveDe, textoAoCliente };
+module.exports = { registrar, processarWebhook, processarRepasse, consultarCodigo, comando, confirmada, statusPago, mascarar, chaveDe, textoAoCliente };

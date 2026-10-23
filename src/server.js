@@ -320,6 +320,16 @@ app.post('/webhooks/xpag', async (req, res) => {
     return res.status(401).json({ error: 'Assinatura invalida' });
   }
 
+  // O REPASSE do phaze-xpag nao tem nenhuma outra trava alem do segredo da
+  // URL: com XPAG_CONFIAR_REPASSE=true e sem credenciais o bot registra a venda
+  // so porque o corpo diz "pago". Sem segredo configurado a URL e aberta, e
+  // qualquer um registraria uma venda falsa. Entao repasse sem segredo e
+  // RECUSADO, nao aceito "por padrao".
+  if (req.body && typeof req.body.evento === 'string' && !config.webhook.xpagSecret) {
+    console.error('[webhooks/xpag] REPASSE RECUSADO: XPAG_WEBHOOK_SECRET esta vazio. Sem segredo qualquer um poderia registrar uma venda falsa. Defina XPAG_WEBHOOK_SECRET (e o mesmo valor em FORWARD_URL ?secret=) para aceitar repasses.');
+    return res.status(401).json({ error: 'Repasse recusado: segredo nao configurado' });
+  }
+
   // Responde antes de conferir. A XPag espera o 200 rapido, e a conferencia
   // chama a API deles de volta; segurar a resposta ate o fim faria o aviso ser
   // reenviado por timeout.
@@ -352,7 +362,8 @@ app.post('/webhooks/xpag', async (req, res) => {
     return;
   }
 
-  if (evento.tipo !== 'cashin' || evento.status !== 'confirmed') return;
+  const { statusPago } = require('./xpagVendas');
+  if (evento.tipo !== 'cashin' || !statusPago(evento.status, evento.moeda)) return;
 
   if (!xpag.configurado()) {
     console.warn('[webhooks/xpag] aviso recebido, mas a integracao esta desligada (sem credenciais ou XPAG_ENABLED=false). Ignorado.');
@@ -366,7 +377,7 @@ app.post('/webhooks/xpag', async (req, res) => {
     console.warn(`[webhooks/xpag] nao consegui conferir ${evento.transacao}: ${real.codigo}`);
     return;
   }
-  if (real.status !== 'confirmed') {
+  if (!statusPago(real.status, real.moeda || evento.moeda)) {
     console.warn(
       `[webhooks/xpag] AVISO DIVERGENTE: o corpo dizia confirmed e a consulta diz ${real.status} ` +
         `(transacao ${evento.transacao}). Ignorado.`,
@@ -491,6 +502,9 @@ const server = ehOPrograma && app.listen(config.port, () => {
   community.start(); // agente de comunidade: posta conteúdo no grupo (Fase 1: só saída)
   ponte.iniciar(); // ponte com o fornecedor da Taobao (fila serial + braço robô)
   require('./resumo').iniciar(); // resumo do dia no grupo da equipe, uma vez por noite
+  if (!config.webhook.xpagSecret && config.xpag.enabled && config.xpag.confiarRepasse) {
+    console.error('[xpag] !!! ATENCAO: XPAG_WEBHOOK_SECRET VAZIO. Repasses do phaze-xpag (vendas MXN/COP/CLP) serao RECUSADOS ate definir o segredo. Sem ele a URL do webhook e aberta e qualquer um poderia registrar uma venda falsa.');
+  }
   { const x = require('./xpag'); console.log(x.configurado() ? `[xpag] ligada (${config.xpag.url}); webhook ${config.webhook.xpagSecret ? 'com' : 'SEM'} token na URL` : `[xpag] DESLIGADA (${x.ligado() ? 'sem XPAG_CLIENT_ID/XPAG_CLIENT_SECRET' : 'XPAG_ENABLED=false'}) — vendas em MXN nao serao registradas`); }
   vendas.iniciar(); // ciclo de venda: cutuca quem gerou pagamento e não pagou
   posvenda.iniciar(); // depois da entrega: pergunta se ativou · reativa quem sumiu

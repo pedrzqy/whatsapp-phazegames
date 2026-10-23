@@ -20,8 +20,8 @@
 const MOEDAS = {
   BRL: { simbolo: 'R$', decimais: 2, pais: 'Brasil' },
   MXN: { simbolo: 'MX$', decimais: 2, pais: 'México' },
-  COP: { simbolo: 'COL$', decimais: 0, pais: 'Colômbia' },
-  CLP: { simbolo: 'CLP$', decimais: 0, pais: 'Chile' },
+  COP: { simbolo: 'COP', decimais: 0, pais: 'Colômbia' },
+  CLP: { simbolo: 'CLP', decimais: 0, pais: 'Chile' },
   ARS: { simbolo: 'AR$', decimais: 2, pais: 'Argentina' },
   BOB: { simbolo: 'Bs', decimais: 2, pais: 'Bolívia' },
   USD: { simbolo: 'US$', decimais: 2, pais: 'Equador' },

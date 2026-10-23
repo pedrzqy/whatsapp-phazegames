@@ -206,8 +206,8 @@ function erroDaApi(status, codigo, mensagem) {
   bloco('moeda: tabela generica');
   t('BRL com milhar', moeda.formatar(1234, 'BRL') === 'R$ 1.234,00', moeda.formatar(1234, 'BRL'));
   t('MXN', moeda.formatar(119, 'MXN') === 'MX$ 119,00');
-  t('CLP sem centavo', moeda.formatar(25000.4, 'CLP') === 'CLP$ 25.000');
-  t('COP sem centavo', moeda.formatar(80000, 'COP') === 'COL$ 80.000');
+  t('CLP sem centavo', moeda.formatar(25000.4, 'CLP') === 'CLP 25.000');
+  t('COP sem centavo', moeda.formatar(80000, 'COP') === 'COP 80.000');
   t('moeda desconhecida mostra o codigo', moeda.formatar(5, 'XYZ') === 'XYZ 5,00');
   t('totais separados por moeda', moeda.formatarTotais({ BRL: 1234, MXN: 119 }) === 'R$ 1.234,00 + MX$ 119,00');
   t('totais vazios = R$ 0,00', moeda.formatarTotais({}) === 'R$ 0,00');
@@ -420,6 +420,69 @@ function erroDaApi(status, codigo, mensagem) {
   t('saque_falhou alerta a equipe', enviadas.length === 1 && /Saque falhou/.test(enviadas[0].texto) && /conta invalida/.test(enviadas[0].texto));
   enviadas.length = 0;
   t('evento desconhecido: 200 e nada acontece', (await postar({ evento: 'xyz' }, 'segredo')) === 200 && enviadas.length === 0 && nXpag() === n4);
+
+  bloco('SEGURANCA: repasse sem XPAG_WEBHOOK_SECRET e recusado');
+  {
+    const secretAntes = config.webhook.xpagSecret;
+    const credId2 = config.xpag.clientId, credSec2 = config.xpag.clientSecret;
+    // Pior caso de verdade: sem segredo, sem credenciais, confiarRepasse ligado.
+    config.webhook.xpagSecret = '';
+    config.xpag.clientId = ''; config.xpag.clientSecret = '';
+    config.xpag.confiarRepasse = true;
+    enviadas.length = 0;
+    const nA = nXpag();
+    const falso = { evento: 'pago', pedido: 'FALSO-1', transacao: 'pr_falso', e2e: 'FALSOE2E', valor: 99999, moeda: 'MXN', nome: 'Golpista', telefone: '6271112233' };
+    t('repasse falso sem segredo configurado: 401', (await postar(falso)) === 401);
+    t('repasse falso mesmo mandando ?secret=qualquer: 401', (await postar(falso, 'qualquer')) === 401);
+    t('nenhuma venda registrada e ninguem avisado', nXpag() === nA && enviadas.length === 0);
+    const direto = await require('./src/xpagVendas').processarRepasse(falso);
+    t('processarRepasse tambem recusa (defesa em profundidade)', direto.ok === false && /XPAG_WEBHOOK_SECRET/.test(direto.motivo) && nXpag() === nA);
+    t('alerta de disputa falsa tambem e recusado', (await postar({ evento: 'disputa', pedido: 'X' })) === 401 && enviadas.length === 0);
+    // Com o segredo configurado, volta a funcionar normalmente.
+    config.webhook.xpagSecret = 'segredo';
+    t('com o segredo configurado e certo: aceito', (await postar({ ...falso, e2e: 'FALSOE2E-OK', valor: 10, pedido: 'OK-1' }, 'segredo')) === 200 && nXpag() === nA + 1);
+    config.webhook.xpagSecret = secretAntes;
+    config.xpag.clientId = credId2; config.xpag.clientSecret = credSec2;
+  }
+
+  bloco('Colombia e Chile: aviso da equipe e status completed');
+  t('COP: formatar', moeda.formatar(45900, 'COP') === 'COP 45.900', moeda.formatar(45900, 'COP'));
+  t('CLP: formatar', moeda.formatar(43790, 'CLP') === 'CLP 43.790', moeda.formatar(43790, 'CLP'));
+  t('pais da moeda', moeda.paisDaMoeda('COP') === 'Colômbia' && moeda.paisDaMoeda('CLP') === 'Chile');
+  t('totais misturam moedas sem somar', moeda.formatarTotais({ BRL: 100, COP: 45900, CLP: 43790 }) === 'R$ 100,00 + CLP 43.790 + COP 45.900', moeda.formatarTotais({ BRL: 100, COP: 45900, CLP: 43790 }));
+  {
+    const sv = require('./src/xpagVendas');
+    t('statusPago: completed vale so em COP/CLP', sv.statusPago('completed', 'COP') && sv.statusPago('completed', 'CLP') && !sv.statusPago('completed', 'MXN') && !sv.statusPago('completed', null) && sv.statusPago('confirmed', 'MXN'));
+
+    estadoReal.COPE2E = { ok: true, type: 'cashin', status: 'confirmed', amount: 45900, currency: 'COP', method: 'NEQUI_QR', e2e: 'COPE2E', transaction_id: 'pr_cop', external_id: 'CO-1-ABC' };
+    enviadas.length = 0;
+    const nB = nXpag();
+    await postar({ evento: 'pago', pedido: 'CO-1-ABC', transacao: 'pr_cop', e2e: 'COPE2E', valor: 45900, moeda: 'COP', cliente: { nome: 'Ana Gomez', email: 'ana@correo.co', telefone: '+57 300 123 4567' }, itens: [{ nome: 'Gift Card Xbox', quantidade: 1 }] }, 'segredo');
+    const avCop = enviadas.find((e) => e.para === GRUPO);
+    t('COP: equipe recebe "Venda paga (Colômbia) — COP 45.900"', nXpag() === nB + 1 && !!avCop && avCop.texto.split('\n')[0].indexOf('Venda paga (Colômbia)* — COP 45.900') >= 0, (avCop?.texto || '').split('\n')[0]);
+    t('COP: itens e nome no aviso', /Gift Card Xbox/.test(avCop?.texto || '') && /Ana Gomez/.test(avCop?.texto || ''));
+    t('COP: venda guardada em COP, valor inteiro', Object.values(vendas._dados().pedidos).some((x) => x.origem === 'xpag' && x.moeda === 'COP' && x.valor === 45900));
+
+    // Chile: a consulta devolve "completed" (o bot precisa aceitar).
+    estadoReal.CLPE2E = { ok: true, type: 'cashin', status: 'completed', amount: 43790, currency: 'CLP', method: 'BANK_TRANSFER', e2e: 'CLPE2E', transaction_id: 'CLPE2E', external_id: 'CL-1-XYZ' };
+    enviadas.length = 0;
+    const nC = nXpag();
+    await postar({ evento: 'pago', pedido: 'CL-1-XYZ', transacao: 'CLPE2E', e2e: 'CLPE2E', valor: 43790, moeda: 'CLP', cliente: { nome: 'Juan Perez', email: 'juan@correo.cl' }, itens: [{ nome: 'PSN 20 USD', quantidade: 1 }] }, 'segredo');
+    const avClp = enviadas.find((e) => e.para === GRUPO);
+    t('CLP completed: equipe recebe "Venda paga (Chile) — CLP 43.790"', nXpag() === nC + 1 && !!avClp && avClp.texto.split('\n')[0].indexOf('Venda paga (Chile)* — CLP 43.790') >= 0, (avClp?.texto || '').split('\n')[0]);
+
+    // MXN com "completed" na consulta continua recusado.
+    estadoReal.MXCOMP = { ok: true, type: 'cashin', status: 'completed', amount: 50, currency: 'MXN', e2e: 'MXCOMP', transaction_id: 'pr_mxc' };
+    const nD = nXpag();
+    await postar({ evento: 'pago', pedido: 'MX-C', transacao: 'pr_mxc', e2e: 'MXCOMP', valor: 50, moeda: 'MXN' }, 'segredo');
+    t('MXN completed na consulta: nao registra (so confirmed)', nXpag() === nD);
+
+    // Webhook cru da XPag em CLP com status completed.
+    estadoReal.CLRAW = { ok: true, type: 'cashin', status: 'completed', amount: 5000, currency: 'CLP', method: 'CARD', e2e: 'CLRAW', transaction_id: 'CLRAW', external_id: 'CL-RAW' };
+    const nE = nXpag();
+    await postar({ type: 'cashin', status: 'completed', amount: 5000, currency: 'CLP', method: 'CARD', e2e: 'CLRAW', transaction_id: 'CLRAW', external_id: 'CL-RAW' }, 'segredo');
+    t('webhook cru CLP completed: registra 1 venda', nXpag() === nE + 1);
+  }
 
   bloco('sem credenciais / desligada');
   config.xpag.enabled = false;
