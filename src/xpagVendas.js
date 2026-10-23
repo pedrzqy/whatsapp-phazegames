@@ -74,8 +74,8 @@ function quandoDe(tx, usarDataDaApi) {
  * Telefone e dados do cliente, sem chute.
  * Devolve { numero, nome, itens, pedido, motivo }.
  */
-async function vincularCliente(tx) {
-  const out = { numero: null, nome: tx.pagador?.nome || '', itens: [], pedido: null, motivo: '' };
+async function vincularCliente(tx, extra = null) {
+  const out = { numero: null, nome: extra?.nome || tx.pagador?.nome || '', itens: [], pedido: null, motivo: '' };
 
   // 1. Pedido da loja cujo codigo foi usado como external_id e cujo valor bate.
   if (tx.externalId) {
@@ -101,7 +101,13 @@ async function vincularCliente(tx) {
     } catch { /* external_id que nao e pedido da loja: segue sem vinculo */ }
   }
 
-  // 2. Telefone que o proprio pagador deixou na XPag (se a API devolver).
+  // 2. Dados que o phaze-xpag guardou do cliente no checkout (repasse).
+  if (!out.numero && extra?.telefone) {
+    out.numero = telefones.paraWhatsApp(extra.telefone, 'MX');
+  }
+  if (!out.itens.length && extra?.itens?.length) out.itens = extra.itens;
+
+  // 3. Telefone que o proprio pagador deixou na XPag (se a API devolver).
   if (!out.numero && tx.pagador?.telefone) {
     out.numero = telefones.paraWhatsApp(tx.pagador.telefone, 'MX');
   }
@@ -148,7 +154,7 @@ function textoParaEquipe({ tx, vinculo, numero, avisado, chave, manual }) {
  * `tx` e o resultado de xpag.consultar / lerTransacao (estado REAL).
  * Devolve { ok, novo, chave, motivo }.
  */
-async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manual = false } = {}) {
+async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manual = false, extra = null } = {}) {
   if (!confirmada(tx)) return { ok: false, motivo: `status ${tx?.status || 'desconhecido'}: so recebimento confirmado vira venda` };
   const moedaCod = (tx.moeda || fallbackMoeda || '').toUpperCase();
   if (!moedaCod) return { ok: false, motivo: 'a XPag nao informou a moeda' };
@@ -178,8 +184,8 @@ async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manu
   });
   if (!r.novo) return { ok: true, novo: false, chave: r.chave };
 
-  let vinculo = { numero: null, nome: t.pagador?.nome || '', itens: [], pedido: null, motivo: '' };
-  try { vinculo = await vincularCliente(t); } catch (e) { console.warn('[xpag] vinculo falhou:', e.message); }
+  let vinculo = { numero: null, nome: extra?.nome || t.pagador?.nome || '', itens: extra?.itens || [], pedido: null, motivo: '' };
+  try { vinculo = await vincularCliente(t, extra); } catch (e) { console.warn('[xpag] vinculo falhou:', e.message); }
 
   let avisado = false;
   if (vinculo.numero) {
@@ -199,7 +205,7 @@ async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manu
   }
 
   try {
-    await vendas.avisarVenda(textoParaEquipe({ tx: t, vinculo, numero: vinculo.numero, avisado, chave: r.chave, manual }));
+    await vendas.avisarVenda(textoParaEquipe({ tx: extra?.email && !t.pagador?.email ? { ...t, pagador: { ...t.pagador, email: extra.email } } : t, vinculo, numero: vinculo.numero, avisado, chave: r.chave, manual }));
   } catch (e) {
     console.warn('[xpag] nao consegui avisar a equipe:', e.message);
   }
@@ -211,7 +217,7 @@ async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manu
  * Chamado pelo webhook DEPOIS de reler o estado real.
  * `evento` = lerWebhook(corpo); `real` = consultar(...) com ok e confirmed.
  */
-async function processarWebhook(evento, real) {
+async function processarWebhook(evento, real, extra = null) {
   let tx = real;
   if (Array.isArray(real.pagamentos) && real.pagamentos.length) {
     // CLABE de valor aberto: a consulta traz a lista; vale o pagamento do aviso.
@@ -220,9 +226,99 @@ async function processarWebhook(evento, real) {
   }
   return registrar(
     { ...tx, externalId: tx.externalId || evento.externalId, e2e: tx.e2e || evento.e2e, transacao: tx.transacao || evento.transacao },
-    { fallbackMoeda: evento.moeda },
+    { fallbackMoeda: evento.moeda, extra },
   );
 }
+
+// ── Repasse do phaze-xpag ─────────────────────────────────────
+
+const textoCurto = (v, n = 80) => minus(v).replace(/\s+/g, ' ').slice(0, n);
+
+/** Itens do repasse: [{nome, quantidade}] (aceita name/qty/quantity). Sem lixo. */
+function itensDoRepasse(lista) {
+  if (!Array.isArray(lista)) return [];
+  return lista
+    .map((i) => ({
+      nome: textoCurto(i?.nome ?? i?.name, 80),
+      quantidade: Math.max(1, Math.min(99, Math.floor(Number(i?.quantidade ?? i?.qty ?? i?.quantity ?? 1)) || 1)),
+    }))
+    .filter((i) => i.nome)
+    .slice(0, 20);
+}
+
+/** Dados do cliente no repasse (sem documento: nunca pedimos CURP/RFC aqui). */
+function extraDoRepasse(c) {
+  const cli = c.cliente && typeof c.cliente === 'object' ? c.cliente : {};
+  return {
+    nome: textoCurto(cli.nome ?? c.nome),
+    email: textoCurto(cli.email ?? c.email, 120),
+    telefone: textoCurto(cli.telefone ?? c.telefone, 30),
+    itens: itensDoRepasse(c.itens ?? cli.itens),
+  };
+}
+
+/**
+ * Trata o aviso que o phaze-xpag manda (corpo com `evento`). O chamador ja
+ * checou o segredo da URL. Devolve { ok, motivo?, novo? } para o log.
+ *
+ *  - pago: com credenciais XPag, reconsulta (e2e, depois transacao) e so
+ *    registra se confirmed. Sem credenciais, so aceita com
+ *    config.xpag.confiarRepasse (padrao true): o repasse vem do nosso backend,
+ *    que ja reconsultou, e so chega com o segredo certo. Mesma chave (e2e) do
+ *    webhook cru: um nao conta em dobro com o outro.
+ *  - disputa / saque_falhou: so alerta a equipe.
+ */
+async function processarRepasse(corpo) {
+  const config = require('./config');
+  const c = corpo || {};
+  const evento = minus(c.evento).toLowerCase();
+
+  if (evento === 'disputa' || evento === 'saque_falhou') {
+    const linhas = evento === 'disputa'
+      ? ['🚨 *Disputa (MED) na XPag*', `Pedido: ${textoCurto(c.pedido) || '(sem pedido)'}`, c.transacao ? `Transação: ${textoCurto(c.transacao)}` : '', 'Uma entrada já confirmada foi contestada. *Não entregue* se ainda não entregou; veja no painel da XPag.']
+      : ['⚠️ *Saque falhou na XPag*', `Pedido: ${textoCurto(c.pedido) || '(sem pedido)'}`, c.motivo ? `Motivo: ${textoCurto(c.motivo, 200)}` : ''];
+    console.warn(`[xpag] repasse ${evento}: pedido ${c.pedido || '(vazio)'}`);
+    try { await require('./vendas').avisarVenda(linhas.filter(Boolean).join('\n')); }
+    catch (e) { console.warn('[xpag] nao consegui avisar a equipe do repasse:', e.message); }
+    return { ok: true, alerta: evento };
+  }
+
+  if (evento !== 'pago') return { ok: false, motivo: `evento "${evento || '(vazio)'}" desconhecido` };
+
+  const e2e = minus(c.e2e);
+  const transacao = minus(c.transacao);
+  const pedido = minus(c.pedido);
+  const moedaCod = minus(c.moeda).toUpperCase();
+  const valor = Number(c.valor);
+  const extra = extraDoRepasse(c);
+  if (!e2e && !transacao) return { ok: false, motivo: 'repasse sem e2e nem transacao' };
+
+  const evt = { e2e: e2e || null, transacao: transacao || null, externalId: pedido || null, moeda: moedaCod || null, estatica: !!c.clabeAberta };
+
+  if (xpag.configurado()) {
+    let real = null;
+    if (e2e) real = await xpag.consultar({ e2e });
+    if ((!real || !real.ok) && transacao) real = await xpag.consultar({ transacao, e2e: e2e || undefined });
+    if (!real || !real.ok) return { ok: false, motivo: `nao consegui conferir na XPag: ${real?.codigo || 'sem_codigo'}` };
+    if (real.status !== 'confirmed' && !(Array.isArray(real.pagamentos) && real.pagamentos.some((p) => p.status === 'confirmed' && p.e2e === e2e))) {
+      return { ok: false, motivo: `aviso divergente: o repasse dizia pago e a consulta diz ${real.status}` };
+    }
+    if (Number.isFinite(valor) && Number.isFinite(real.valor) && Math.abs(valor - real.valor) > 0.01) {
+      console.warn(`[xpag] repasse diz ${valor} e a XPag diz ${real.valor} (pedido ${pedido}); vale a XPag.`);
+    }
+    return processarWebhook(evt, real, extra);
+  }
+
+  if (!config.xpag.enabled) return { ok: false, motivo: 'XPAG_ENABLED=false' };
+  if (!config.xpag.confiarRepasse) return { ok: false, motivo: 'sem credenciais XPag e XPAG_CONFIAR_REPASSE=false' };
+  if (!e2e) return { ok: false, motivo: 'sem credenciais para conferir e o repasse nao traz e2e' };
+  console.log(`[xpag] repasse aceito sem reconsulta (XPAG_CONFIAR_REPASSE; o phaze-xpag ja conferiu): ${pedido || e2e}`);
+  return registrar(
+    { status: 'confirmed', tipo: 'cashin', valor, moeda: moedaCod, e2e, transacao: transacao || null, externalId: pedido || null, estatica: !!c.clabeAberta, pagador: null },
+    { fallbackMoeda: moedaCod, extra },
+  );
+}
+
 
 /**
  * Consulta um codigo digitado pelo operador. O codigo pode ser o e2e (no SPEI
@@ -309,4 +405,4 @@ async function comando(args) {
   return saidas.join('\n\n');
 }
 
-module.exports = { registrar, processarWebhook, consultarCodigo, comando, confirmada, mascarar, chaveDe, textoAoCliente };
+module.exports = { registrar, processarWebhook, processarRepasse, consultarCodigo, comando, confirmada, mascarar, chaveDe, textoAoCliente };

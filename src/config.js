@@ -157,6 +157,13 @@ const config = {
     // A URL que a XPag chama quando a cobranca muda de estado. Vai no CORPO de
     // cada cobranca, porque nao existe cadastro de webhook no painel deles.
     webhookUrl: process.env.XPAG_WEBHOOK_URL || '',
+    // Aceitar o REPASSE do phaze-xpag (backend proprio que recebe o webhook da
+    // XPag, reconsulta e depois chama o bot) mesmo SEM credenciais XPag aqui.
+    // So vale com o segredo da URL certo. O repasse vem de um servico nosso que
+    // ja conferiu o pagamento; com XPAG_CLIENT_ID/SECRET configurados o bot
+    // reconsulta de qualquer jeito e esta variavel nao muda nada. Desligue
+    // (XPAG_CONFIAR_REPASSE=false) para so registrar o que a XPag confirmar aqui.
+    confiarRepasse: process.env.XPAG_CONFIAR_REPASSE !== 'false',
   },
 
   // Token da tela de reconectar o WhatsApp (/conectar).

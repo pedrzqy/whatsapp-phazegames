@@ -354,6 +354,10 @@ hoje tem uma linha que aparece. O `#status` nasceu disso: foi ele que achou o
 - Webhook: `POST /webhooks/xpag?secret=<XPAG_WEBHOOK_SECRET>`. Não é assinado: o bot SEMPRE relê o estado em
   `/consult-transaction` e só registra se `status=confirmed`. Chave = e2e (único por pagamento); repetição não
   conta em dobro. Chave/CLABE aberta (`origin: static`) repete `transaction_id`/`external_id`: só o e2e vale.
+- Repasse do phaze-xpag: o mesmo `POST /webhooks/xpag?secret=...` aceita o corpo `{evento:'pago'|'disputa'|'saque_falhou', pedido,
+  transacao, e2e, valor, moeda, cliente?, itens?}` (é o `FORWARD_URL` do backend). Com credenciais XPag o bot reconsulta
+  (e2e, depois transacao); sem elas aceita só se `XPAG_CONFIAR_REPASSE` (padrão true) e o segredo bater. Mesma chave
+  e2e do webhook cru: não conta em dobro. `disputa`/`saque_falhou` só alertam a equipe.
 - A venda entra no mesmo `data/vendas.json` com `moeda`, `valor`, `origem: 'xpag'`, `ids`. Documento do pagador
   fica mascarado (4 últimos). O bot NÃO entrega chave dessas vendas: o aviso diz "Entregar manualmente".
 - Telefone só se vincula sem chute: telefone do pagador (se a API devolver) ou pedido da loja cujo código foi o

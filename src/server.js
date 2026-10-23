@@ -325,6 +325,21 @@ app.post('/webhooks/xpag', async (req, res) => {
   // reenviado por timeout.
   res.json({ ok: true });
 
+  // Repasse do phaze-xpag (backend proprio): corpo com `evento` em vez de
+  // type/status da XPag. O segredo da URL ja foi conferido acima.
+  if (req.body && typeof req.body.evento === 'string') {
+    console.log(`[webhooks/xpag] repasse do phaze-xpag: ${req.body.evento} | pedido: ${req.body.pedido || '(vazio)'} | e2e: ${req.body.e2e || '(vazio)'}`);
+    try {
+      const r = await require('./xpagVendas').processarRepasse(req.body);
+      if (!r.ok) console.warn(`[webhooks/xpag] repasse NAO registrado: ${r.motivo}`);
+      else if (r.alerta) console.log(`[webhooks/xpag] repasse ${r.alerta}: equipe avisada`);
+      else console.log(`[webhooks/xpag] repasse ${r.novo ? 'registrado' : 'ja estava registrado (repeticao ignorada)'}`);
+    } catch (e) {
+      console.error('[webhooks/xpag] falha no repasse:', e.message);
+    }
+    return;
+  }
+
   const evento = xpag.lerWebhook(req.body);
   console.log(
     `[webhooks/xpag] ${evento.tipo || 'sem tipo'} ${evento.status || 'sem status'} ` +

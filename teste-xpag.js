@@ -351,6 +351,76 @@ function erroDaApi(status, codigo, mensagem) {
   out = await operador.executar('#xpag hoje', '5541999999999');
   t('#xpag hoje lista o que o bot registrou', /Vendas XPag de hoje|Nenhuma venda XPag/.test(out));
 
+  bloco('repasse do phaze-xpag (evento: pago)');
+  const repasse = { evento: 'pago', pedido: 'MX-REP-1', transacao: 'pr_rep1', e2e: 'REP1E2E', valor: 119, moeda: 'MXN',
+    cliente: { nome: 'Ana Torres', email: 'ana@exemplo.mx', telefone: '+52 627 178 2434' }, itens: [{ nome: 'Gift Card Xbox', quantidade: 2 }, { nome: 'Free Fire 100' , quantidade: 1 }] };
+  estadoReal.REP1E2E = { ok: true, type: 'cashin', status: 'confirmed', amount: 119, currency: 'MXN', e2e: 'REP1E2E', transaction_id: 'pr_rep1', external_id: 'MX-REP-1' };
+  enviadas.length = 0;
+  const n0 = nXpag();
+  t('repasse sem o segredo: 401', (await postar(repasse)) === 401 && nXpag() === n0);
+  t('repasse com segredo: 200', (await postar(repasse, 'segredo')) === 200);
+  t('repasse conferido registra 1 venda', nXpag() === n0 + 1);
+  const avRep = enviadas.find((e) => e.para === GRUPO);
+  t('equipe: valor MXN, itens e nome', !!avRep && /Venda paga \(México\)/.test(avRep.texto) && /MX\$ 119,00/.test(avRep.texto) && /Gift Card Xbox \(2x\)/.test(avRep.texto) && /Ana Torres/.test(avRep.texto), (avRep?.texto || '').replace(/\n/g, ' | '));
+  t('equipe: continua mandando entregar manualmente', /Entregar manualmente/.test(avRep?.texto || ''));
+  const cliRep = enviadas.find((e) => e.para === '526271782434');
+  t('cliente avisado pelo telefone do repasse', !!cliRep && /Ana/.test(cliRep.texto) && /MX\$ 119,00/.test(cliRep.texto));
+  const antesRep = enviadas.length;
+  await postar(repasse, 'segredo');
+  t('repasse repetido nao conta nem avisa de novo', nXpag() === n0 + 1 && enviadas.length === antesRep);
+
+  // Mesma chave do webhook cru: cru primeiro, repasse depois (e vice-versa).
+  estadoReal.CRUREP = { ok: true, type: 'cashin', status: 'confirmed', amount: 50, currency: 'MXN', e2e: 'CRUREP', transaction_id: 'pr_cr', external_id: 'MX-CR' };
+  await postar({ ...corpoWebhook, e2e: 'CRUREP', transaction_id: 'pr_cr', external_id: 'MX-CR', amount: 50 }, 'segredo');
+  const n1 = nXpag();
+  await postar({ evento: 'pago', pedido: 'MX-CR', transacao: 'pr_cr', e2e: 'CRUREP', valor: 50, moeda: 'MXN' }, 'segredo');
+  t('cru + repasse do mesmo e2e: uma venda so', nXpag() === n1);
+
+  // XPag diz pendente: repasse mentindo nao registra.
+  estadoReal.REPFALSO = { ok: true, type: 'cashin', status: 'pending', amount: 10, currency: 'MXN', e2e: 'REPFALSO', transaction_id: 'pr_rf' };
+  const n2 = nXpag();
+  await postar({ evento: 'pago', pedido: 'X', transacao: 'pr_rf', e2e: 'REPFALSO', valor: 10, moeda: 'MXN' }, 'segredo');
+  t('com credenciais, repasse nao confirmado pela XPag e ignorado', nXpag() === n2);
+  // e2e desconhecido, mas a transacao existe: cai na consulta por transacao.
+  estadoReal.PRTX = { ok: true, type: 'cashin', status: 'confirmed', amount: 70, currency: 'MXN', e2e: 'E2EREAL', transaction_id: 'pr_tx' };
+  await postar({ evento: 'pago', pedido: 'MX-TX', transacao: 'pr_tx', e2e: 'E2EDIFERENTE', valor: 70, moeda: 'MXN' }, 'segredo');
+  t('e2e nao achado: confere pela transacao', nXpag() === n2 + 1);
+
+  // Sem credenciais: confia no repasse (com o segredo) por padrao.
+  const credId = config.xpag.clientId, credSec = config.xpag.clientSecret;
+  config.xpag.clientId = ''; config.xpag.clientSecret = '';
+  t('sem credenciais: xpag.configurado() false', xpag.configurado() === false);
+  enviadas.length = 0;
+  const n3 = nXpag();
+  const consultasAntes = consultas.length;
+  const semCred = { evento: 'pago', pedido: 'MX-SC-1', transacao: 'pr_sc', e2e: 'SC1E2E', valor: 200, moeda: 'MXN', nome: 'Luis', telefone: '6271112233', itens: [{ name: 'PSN 10 USD', qty: 1 }] };
+  t('sem credenciais e sem segredo: 401', (await postar(semCred)) === 401 && nXpag() === n3);
+  await postar(semCred, 'segredo');
+  t('sem credenciais: aceita o repasse (confiarRepasse) sem consultar', nXpag() === n3 + 1 && consultas.length === consultasAntes);
+  t('sem credenciais: equipe e cliente avisados', enviadas.some((e) => e.para === GRUPO && /MX\$ 200,00/.test(e.texto) && /PSN 10 USD/.test(e.texto) && /Luis/.test(e.texto)) && enviadas.some((e) => e.para === '526271112233'));
+  await postar(semCred, 'segredo');
+  t('sem credenciais: repeticao idempotente', nXpag() === n3 + 1);
+  await postar({ ...semCred, e2e: undefined, transacao: 'so_tx' }, 'segredo');
+  t('sem credenciais e sem e2e: nao registra', nXpag() === n3 + 1);
+  await postar({ ...semCred, e2e: 'SC2E2E', moeda: '', valor: 5 }, 'segredo');
+  t('sem moeda: nao registra', nXpag() === n3 + 1);
+  config.xpag.confiarRepasse = false;
+  await postar({ ...semCred, e2e: 'SC3E2E' }, 'segredo');
+  t('XPAG_CONFIAR_REPASSE=false: sem credenciais nao registra', nXpag() === n3 + 1);
+  config.xpag.confiarRepasse = true;
+  config.xpag.clientId = credId; config.xpag.clientSecret = credSec;
+
+  bloco('repasse: disputa e saque_falhou');
+  enviadas.length = 0;
+  const n4 = nXpag();
+  await postar({ evento: 'disputa', pedido: 'MX-D1', transacao: 'pr_d1', detalhes: {} }, 'segredo');
+  t('disputa alerta a equipe e nao registra venda', enviadas.length === 1 && enviadas[0].para === GRUPO && /Disputa/.test(enviadas[0].texto) && /MX-D1/.test(enviadas[0].texto) && nXpag() === n4);
+  enviadas.length = 0;
+  await postar({ evento: 'saque_falhou', pedido: 'SQ-1', motivo: 'conta invalida' }, 'segredo');
+  t('saque_falhou alerta a equipe', enviadas.length === 1 && /Saque falhou/.test(enviadas[0].texto) && /conta invalida/.test(enviadas[0].texto));
+  enviadas.length = 0;
+  t('evento desconhecido: 200 e nada acontece', (await postar({ evento: 'xyz' }, 'segredo')) === 200 && enviadas.length === 0 && nXpag() === n4);
+
   bloco('sem credenciais / desligada');
   config.xpag.enabled = false;
   t('XPAG_ENABLED=false desliga', xpag.configurado() === false);
