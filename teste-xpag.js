@@ -269,7 +269,7 @@ function erroDaApi(status, codigo, mensagem) {
   t('aviso diz entregar manualmente', /Entregar manualmente/.test(aviso?.texto || ''));
   t('aviso nao traz o documento inteiro', !/LOPM800101MDFRRL09/.test(aviso?.texto || ''));
   const cli = enviadas.find((e) => e.para === '526271782434');
-  t('cliente avisado no telefone do pagador (52 + 10 digitos)', !!cli && /pagamento confirmado/i.test(cli.texto) && /MX\$ 119,00/.test(cli.texto));
+  t('cliente avisado no telefone do pagador (52 + 10 digitos)', !!cli && /pago confirmado/i.test(cli.texto) && /\$119 MXN/.test(cli.texto) && !/pagamento/i.test(cli.texto), cli && cli.texto.split('\n')[0]);
 
   bloco('webhook: repeticao e duplicata');
   const antes = enviadas.length;
@@ -364,7 +364,7 @@ function erroDaApi(status, codigo, mensagem) {
   t('equipe: valor MXN, itens e nome', !!avRep && /Venda paga \(México\)/.test(avRep.texto) && /MX\$ 119,00/.test(avRep.texto) && /Gift Card Xbox \(2x\)/.test(avRep.texto) && /Ana Torres/.test(avRep.texto), (avRep?.texto || '').replace(/\n/g, ' | '));
   t('equipe: continua mandando entregar manualmente', /Entregar manualmente/.test(avRep?.texto || ''));
   const cliRep = enviadas.find((e) => e.para === '526271782434');
-  t('cliente avisado pelo telefone do repasse', !!cliRep && /Ana/.test(cliRep.texto) && /MX\$ 119,00/.test(cliRep.texto));
+  t('cliente avisado pelo telefone do repasse', !!cliRep && /Ana/.test(cliRep.texto) && /\$119 MXN/.test(cliRep.texto) && /Recibimos tu pago/.test(cliRep.texto));
   const antesRep = enviadas.length;
   await postar(repasse, 'segredo');
   t('repasse repetido nao conta nem avisa de novo', nXpag() === n0 + 1 && enviadas.length === antesRep);
@@ -482,6 +482,284 @@ function erroDaApi(status, codigo, mensagem) {
     const nE = nXpag();
     await postar({ type: 'cashin', status: 'completed', amount: 5000, currency: 'CLP', method: 'CARD', e2e: 'CLRAW', transaction_id: 'CLRAW', external_id: 'CL-RAW' }, 'segredo');
     t('webhook cru CLP completed: registra 1 venda', nXpag() === nE + 1);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // Lembretes de pagamento das cobrancas da XPag (criada -> lembretes)
+  // ═══════════════════════════════════════════════════════════════
+  {
+    const lem = require('./src/xpagLembretes');
+    const { idiomaDoTelefone } = require('./src/idioma');
+    const telefones = require('./src/telefone');
+    const chavesMod = require('./src/chaves');
+    const store = require('./src/store');
+    const HORA = 3600 * 1000;
+    const MINU = 60 * 1000;
+    const T0 = Date.UTC(2026, 9, 22, 17, 0); // 11h no Mexico, 12h na Colombia, 14h no Chile
+    const dados = () => lem._dados().pedidos;
+    const iso = (ms) => new Date(ms).toISOString();
+    const para = (num) => enviadas.filter((e) => e.para === num);
+
+    const base = (extra = {}) => ({
+      evento: 'criada', pedido: 'MX-L-1', valor: 109, moeda: 'MXN', pais: 'MX', metodo: 'spei',
+      criadaEm: iso(T0), expiraEm: iso(T0 + 24 * HORA),
+      cliente: { nome: 'ana gomez', email: 'a@b.mx', telefone: '55 1234 5678' },
+      itens: [{ nome: 'Celeste', quantidade: 1 }],
+      pagamento: { clabe: '012345678901234567', banco: 'STP', beneficiario: 'Zypher', linkPedido: 'https://phazegames.com/mexico?pedido=MX-L-1' },
+      ...extra,
+    });
+    const NUM_MX = '525512345678';
+
+    bloco('idioma pelo telefone');
+    t('52, 57 e 56 em espanhol', idiomaDoTelefone('525512345678') === 'es' && idiomaDoTelefone('573001234567') === 'es' && idiomaDoTelefone('56912345678') === 'es');
+    t('outros hispanicos (54, 591, 593, 595, 598, 51, 58, 506, 507, 502, 503, 504, 505)', ['5491155551234', '59171234567', '593991234567', '595981123456', '59899123456', '51987654321', '584121234567', '50688887777', '50761234567', '50255551234', '50370001234', '50499887766', '50588887777'].every((n) => idiomaDoTelefone(n) === 'es'));
+    t('55 em portugues; vazio e desconhecido em portugues', idiomaDoTelefone('5511912345678') === 'pt' && idiomaDoTelefone('') === 'pt' && idiomaDoTelefone(null) === 'pt' && idiomaDoTelefone('12125551234') === 'pt' && idiomaDoTelefone('18095551234') === 'pt');
+    t('aceita jid', idiomaDoTelefone('525512345678@s.whatsapp.net') === 'es');
+    t('telefone da Colombia sem DDI (pista CO)', telefones.paraWhatsApp('300 123 4567', 'CO') === '573001234567' && telefones.paraWhatsApp('+57 300 123 4567', 'CO') === '573001234567');
+    t('telefone do Chile sem DDI (pista CL)', telefones.paraWhatsApp('9 1234 5678', 'CL') === '56912345678' && telefones.paraWhatsApp('+56 9 1234 5678', 'CL') === '56912345678');
+    t('colombiano nao vira numero mexicano; lixo e recusado', telefones.paraWhatsApp('300 123 4567', 'COP') !== '523001234567' && telefones.paraWhatsApp('12345', 'CO') === null && telefones.paraWhatsApp('5512345678', 'MX') === '525512345678');
+
+    bloco('lembretes: SPEI do Mexico (criada -> 3 lembretes em espanhol)');
+    lem._limpar();
+    enviadas.length = 0;
+    let rc = lem.registrarCriada(base(), T0);
+    t('criada agenda: ok, nova, com telefone', rc.ok && rc.novo === true && rc.semTelefone === false);
+    t('3 passos (30min, 6h, 4h antes de vencer)', dados()['MX-L-1'].passos.length === 3 && dados()['MX-L-1'].numero === NUM_MX);
+    rc = lem.registrarCriada(base(), T0 + MINU);
+    t('criada repetida: ignorada, nada duplicado', rc.ok && rc.novo === false && Object.keys(dados()).length === 1 && dados()['MX-L-1'].passos.length === 3);
+    t('10 min depois: ainda nao sai nada', (await lem.tick(T0 + 10 * MINU)) === 0 && enviadas.length === 0);
+    t('31 min depois: sai o 1o lembrete', (await lem.tick(T0 + 31 * MINU)) === 1 && para(NUM_MX).length === 1);
+    let m1 = para(NUM_MX)[0]?.texto || '';
+    t('1o lembrete em espanhol com CLABE, banco, beneficiario, monto exato e link', /^¡Hola, Ana!/.test(m1) && m1.includes('`012345678901234567`') && m1.includes('Banco: STP') && m1.includes('Beneficiario: Zypher') && m1.includes('Monto exacto: *$109 MXN* (pesos mexicanos)') && m1.includes('https://phazegames.com/mexico?pedido=MX-L-1'), m1.split('\n')[0]);
+    t('nao fala em portugues nem cita fornecedor', !/pagamento|aguardando|Oi,/.test(m1) && !/taobao|fornecedor|proveedor/i.test(m1));
+    t('um minuto depois: nada novo (nao repete)', (await lem.tick(T0 + 32 * MINU)) === 0 && (await lem.tick(T0 + 3 * HORA)) === 0);
+    t('6h30: sai o 2o', (await lem.tick(T0 + 6.5 * HORA)) === 1 && para(NUM_MX).length === 2);
+    t('20h30 (7h30 no Mexico, fora da janela): espera', (await lem.tick(T0 + 14.5 * HORA)) === 0 && (await lem.tick(T0 + 20.5 * HORA)) === 0);
+    t('22h (9h no Mexico): sai o ultimo, "vence hoy"', (await lem.tick(T0 + 22 * HORA)) === 1 && /vence hoy|(venc)/.test(para(NUM_MX)[2]?.texto || '') && para(NUM_MX).length === 3, (para(NUM_MX)[2]?.texto || '').split('\n')[0]);
+    t('no maximo 3: depois nada mais', (await lem.tick(T0 + 23 * HORA)) === 0 && (await lem.tick(T0 + 30 * HORA)) === 0 && para(NUM_MX).length === 3);
+    t('as 3 mensagens sao diferentes entre si', new Set(para(NUM_MX).map((e) => e.texto.split('\n')[0])).size === 3);
+
+    bloco('lembretes: persistencia no volume');
+    lem._recarregar();
+    t('estado relido do disco', dados()['MX-L-1'] && dados()['MX-L-1'].passos.every((s) => s.feito) && require('fs').existsSync(require('path').join(process.env.PONTE_DATA_DIR, 'xpag-pendentes.json')));
+    t('depois de recarregar nao repete', (await lem.tick(T0 + 22.2 * HORA)) === 0);
+
+    bloco('lembretes: pago cancela (repasse real)');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-2', cliente: { nome: 'Luis', telefone: '55 8765 4321' }, pagamento: { clabe: '012', linkPedido: 'https://phazegames.com/mexico?pedido=MX-L-2' } }), T0);
+    estadoReal.LEMB2 = { ok: true, type: 'cashin', status: 'confirmed', amount: 109, currency: 'MXN', method: 'SPEI', e2e: 'LEMB2', transaction_id: 'pr_l2', external_id: 'MX-L-2' };
+    await postar({ evento: 'pago', pedido: 'MX-L-2', transacao: 'pr_l2', e2e: 'LEMB2', valor: 109, moeda: 'MXN', cliente: { nome: 'Luis', telefone: '55 8765 4321' } }, 'segredo');
+    t('pago encerra o calendario', dados()['MX-L-2'].status === 'paga');
+    const antesPago = enviadas.length;
+    t('depois do pago nenhum lembrete sai', (await lem.tick(T0 + 31 * MINU)) === 0 && (await lem.tick(T0 + 7 * HORA)) === 0 && enviadas.length === antesPago);
+    const confLuis = para('525587654321')[0];
+    t('o aviso de pagamento confirmado foi em espanhol', !!confLuis && /pago confirmado/.test(confLuis.texto) && /\$109 MXN/.test(confLuis.texto), confLuis && confLuis.texto.split('\n')[0]);
+
+    bloco('lembretes: pago ANTES da criada (evento fora de ordem)');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.encerrar('MX-L-9', 'paga');
+    rc = lem.registrarCriada(base({ pedido: 'MX-L-9' }), T0);
+    t('criada atrasada de pedido ja pago nao agenda', rc.ok && rc.novo === false && (await lem.tick(T0 + 31 * MINU)) === 0 && enviadas.length === 0);
+
+    bloco('lembretes: pago conferido na XPag antes de cutucar');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-8' }), T0);
+    estadoReal['MX-L-8'] = { ok: true, type: 'cashin', status: 'confirmed', amount: 109, currency: 'MXN', e2e: 'LEMB8', transaction_id: 'pr_l8', external_id: 'MX-L-8' };
+    t('a XPag diz pago (webhook perdido): nao cobra e encerra', (await lem.tick(T0 + 31 * MINU)) === 0 && dados()['MX-L-8'].status === 'paga' && enviadas.length === 0);
+    delete estadoReal['MX-L-8'];
+
+    bloco('lembretes: expirada para os lembretes (repasse real) e o relogio tambem');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-3', metodo: 'oxxo', expiraEm: iso(T0 + 12 * 24 * HORA), cliente: { nome: 'Rosa', telefone: '55 1111 2222' }, pagamento: { referenciaOxxo: '9876543210', linkPedido: 'https://phazegames.com/mexico?pedido=MX-L-3' } }), T0);
+    lem.registrarCriada(base({ pedido: 'MX-L-3B', metodo: 'oxxo', expiraEm: iso(T0 + 12 * 24 * HORA), cliente: { nome: 'Rita', telefone: '55 3333 4444' }, pagamento: { referenciaOxxo: '1234567890', urlVoucher: 'https://voucher.test/x', linkPedido: 'https://phazegames.com/mexico?pedido=MX-L-3B' } }), T0);
+    t('expirada com segredo: 200', (await postar({ evento: 'expirada', pedido: 'MX-L-3' }, 'segredo')) === 200 && dados()['MX-L-3'].expirada === true);
+    t('expirada sem segredo: 401 e nada muda', (await postar({ evento: 'expirada', pedido: 'MX-L-3B' })) === 401 && !dados()['MX-L-3B'].expirada);
+    t('OXXO: 2h30 depois so a cobranca viva recebe lembrete', (await lem.tick(T0 + 2.5 * HORA)) === 1 && para('525533334444').length === 1 && para('525511112222').length === 0);
+    const ox = para('525533334444')[0]?.texto || '';
+    t('OXXO: referencia, monto, ficha e link do pedido', ox.includes('`1234567890`') && ox.includes('OXXO') && ox.includes('$109 MXN') && ox.includes('https://voucher.test/x') && ox.includes('pedido=MX-L-3B'));
+    t('OXXO: 2o lembrete so no dia seguinte (24h)', (await lem.tick(T0 + 8 * HORA)) === 0 && (await lem.tick(T0 + 25 * HORA)) === 1);
+    t('OXXO: 3o no dia anterior ao vencimento (dia 11), vence "mañana"', (await lem.tick(T0 + 11 * 24 * HORA + 2 * HORA)) === 1 && /vence mañana|\(vence mañana\)/.test(para('525533334444')[2]?.texto || ''), (para('525533334444')[2]?.texto || '').split('\n')[0]);
+
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-4' }), T0);
+    t('vencida pelo relogio (sem aviso do backend): nada sai', (await lem.tick(T0 + 25 * HORA)) === 0 && enviadas.length === 0);
+
+    bloco('lembretes: Colombia (Nequi 45 min) em espanhol');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'CO-L-1', valor: 39900, moeda: 'COP', pais: 'CO', metodo: 'nequi_qr', expiraEm: iso(T0 + 45 * MINU), cliente: { nome: 'Ana Gomez', telefone: '300 123 4567' }, pagamento: { checkoutUrl: 'https://pay.xpag.test/co', qr: 'https://qr.xpag.test/co.png', linkPedido: 'https://phazegames.com/mexico?pedido=CO-L-1' } }), T0);
+    t('telefone sem DDI vira 57 + 10 (pista da moeda)', dados()['CO-L-1'].numero === '573001234567');
+    t('5 min depois nada; 21 min depois o aviso rapido (antes de vencer)', (await lem.tick(T0 + 5 * MINU)) === 0 && (await lem.tick(T0 + 21 * MINU)) === 1);
+    const co1 = para('573001234567')[0]?.texto || '';
+    t('COP: valor com ponto de milhar, peso colombiano, link e pedido', /^¡Hola, Ana!/.test(co1) && co1.includes('$39.900 COP') && co1.includes('pesos colombianos') && co1.includes('https://pay.xpag.test/co') && co1.includes('pedido=CO-L-1') && /Nequi/.test(co1), co1.split('\n').slice(0, 4).join(' | '));
+    t('vence em minutos', /minutos|pronto|breve/.test(co1.split('\n')[0]));
+    t('depois do aviso rapido e antes de vencer: nada', (await lem.tick(T0 + 40 * MINU)) === 0);
+    t('11 min depois de vencer: oferece gerar um codigo novo, com o link da loja', (await lem.tick(T0 + 56 * MINU)) === 1 && /venci/.test(para('573001234567')[1]?.texto || '') && para('573001234567')[1].texto.includes('https://phazegames.com'), (para('573001234567')[1]?.texto || '').split('\n')[0]);
+    t('so isso: nada mais depois', (await lem.tick(T0 + 5 * HORA)) === 0 && para('573001234567').length === 2);
+
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'CO-L-2', valor: 39900, moeda: 'COP', pais: 'CO', metodo: 'breb', expiraEm: undefined, cliente: { nome: 'Pedro', telefone: '+57 311 222 3333' }, pagamento: { chaveBreb: '@llave123', checkoutUrl: 'https://pay.xpag.test/co2' } }), T0);
+    t('Bre-B sem expiraEm no evento: assume 15 min; aviso aos 7 min', (await lem.tick(T0 + 4 * MINU)) === 0 && (await lem.tick(T0 + 8 * MINU)) === 1 && para('573112223333')[0].texto.includes('@llave123') && /Bre-B/.test(para('573112223333')[0].texto));
+    await postar({ evento: 'expirada', pedido: 'CO-L-2' }, 'segredo');
+    t('Bre-B vencida: oferece codigo novo uma vez', (await lem.tick(T0 + 30 * MINU)) === 1 && /venci/.test(para('573112223333')[1].texto));
+
+    bloco('lembretes: Chile (checkout) em espanhol');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'CL-L-1', valor: 6090, moeda: 'CLP', pais: 'CL', metodo: 'bank_transfer', expiraEm: undefined, cliente: { nome: 'Juan', telefone: '9 1234 5678' }, pagamento: { checkoutUrl: 'https://pay.xpag.test/cl', linkPedido: 'https://phazegames.com/mexico?pedido=CL-L-1' } }), T0);
+    t('telefone chileno vira 56 + 9', dados()['CL-L-1'].numero === '56912345678');
+    t('CLP: 31 min depois sai o lembrete', (await lem.tick(T0 + 31 * MINU)) === 1);
+    const cl1 = para('56912345678')[0]?.texto || '';
+    t('CLP: $6.090 CLP, pesos chilenos, link de pagamento e pedido', cl1.includes('$6.090 CLP') && cl1.includes('pesos chilenos') && cl1.includes('https://pay.xpag.test/cl') && cl1.includes('pedido=CL-L-1'));
+    t('CLP: 3o lembrete sem inventar vencimento', (await lem.tick(T0 + 4.5 * HORA)) === 1 && (await lem.tick(T0 + 20.5 * HORA)) === 1 && !/vence (hoy|mañana)/.test(para('56912345678')[2]?.texto || ''));
+
+    bloco('lembretes: portugues para telefone +55');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-5', cliente: { nome: 'Carla', telefone: '+55 11 91234-5678' } }), T0);
+    t('+55 explicito vira 5511912345678', dados()['MX-L-5'].numero === '5511912345678');
+    await lem.tick(T0 + 31 * MINU);
+    const pt = para('5511912345678')[0]?.texto || '';
+    t('texto em portugues, valor em R$/MX$ e CLABE', /^Oi, Carla!/.test(pt) && pt.includes('Valor exato: *MX$ 109,00*') && pt.includes('Favorecido: Zypher') && pt.includes('`012345678901234567`') && !/Hola|Monto/.test(pt), pt.split('\n')[0]);
+
+    bloco('lembretes: sem telefone nao ha mensagem ao cliente');
+    lem._limpar();
+    enviadas.length = 0;
+    rc = lem.registrarCriada(base({ pedido: 'MX-L-6', cliente: { nome: 'Sem Fone', telefone: '' } }), T0);
+    const rc2 = lem.registrarCriada(base({ pedido: 'MX-L-7', cliente: { nome: 'Fone Ruim', telefone: '123' } }), T0);
+    t('sem telefone: registrada, sem telefone', rc.ok && rc.semTelefone === true && rc2.semTelefone === true && dados()['MX-L-6'].numero === null);
+    t('nenhum lembrete e nada para a equipe', (await lem.tick(T0 + 31 * MINU)) === 0 && (await lem.tick(T0 + 7 * HORA)) === 0 && enviadas.length === 0);
+    t('conta como pendente sem telefone no resumo', lem.pendentes(T0 + HORA).total === 2 && lem.pendentes(T0 + HORA).semTelefone === 2);
+    t('resumo do dia mostra "Pendentes XPag"', /Pendentes XPag: \*2\* \(2 sem telefone\)/.test((await resumo.montar({ agora: T0 + HORA })).texto));
+
+    bloco('lembretes: horario civil do cliente');
+    lem._limpar();
+    enviadas.length = 0;
+    const T1 = Date.UTC(2026, 9, 22, 8, 0); // 2h no Mexico
+    lem.registrarCriada(base({ pedido: 'MX-L-10', criadaEm: iso(T1), expiraEm: iso(T1 + 24 * HORA) }), T1);
+    t('de madrugada no Mexico nao sai', (await lem.tick(T1 + 31 * MINU)) === 0 && (await lem.tick(T1 + 3 * HORA)) === 0);
+    t('9h no Mexico sai so UMA (o 2o, que ja valia), sem rajada do 1o', (await lem.tick(T1 + 7 * HORA)) === 1 && para(NUM_MX).length === 1 && dados()['MX-L-10'].passos[0].pulado);
+
+    bloco('lembretes: uma mensagem por pessoa');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-11' }), T0);
+    lem.registrarCriada(base({ pedido: 'MX-L-12', valor: 200, criadaEm: iso(T0 + 5 * MINU) }), T0 + 5 * MINU);
+    t('a cobranca nova substitui a antiga da mesma pessoa', dados()['MX-L-11'].status === 'substituida' && dados()['MX-L-12'].status === 'aberta');
+    await lem.tick(T0 + 40 * MINU);
+    t('so sai uma mensagem, da mais recente', para(NUM_MX).length === 1 && para(NUM_MX)[0].texto.includes('$200 MXN'));
+
+    bloco('lembretes: conversa assumida e chave do atendimento');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-13' }), T0);
+    store.saveContact(NUM_MX, { paused: true });
+    t('contato com atendente (paused): nao cutuca', (await lem.tick(T0 + 31 * MINU)) === 0);
+    store.saveContact(NUM_MX, { paused: false });
+    t('liberado, o lembrete sai dentro do prazo do passo', (await lem.tick(T0 + HORA)) === 1);
+    chavesMod.definir('atendimento', false);
+    t('atendimento desligado (#admin 1): o 2o lembrete nao sai', (await lem.tick(T0 + 6.5 * HORA)) === 0 && dados()['MX-L-13'].passos[1].pulado === 'atendimento_desligado');
+    chavesMod.definir('atendimento', null);
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-14' }), T0);
+    chavesMod.definir('atendimento', false);
+    t('atendimento desligado: o 1o lembrete (fluxo de pagamento, como o do Pix) continua', (await lem.tick(T0 + 31 * MINU)) === 1);
+    chavesMod.definir('atendimento', null);
+
+    bloco('lembretes: chave XPAG_LEMBRETES');
+    lem._limpar();
+    enviadas.length = 0;
+    lem.registrarCriada(base({ pedido: 'MX-L-15' }), T0);
+    process.env.XPAG_LEMBRETES = 'false';
+    t('XPAG_LEMBRETES=false: nada sai', (await lem.tick(T0 + 31 * MINU)) === 0);
+    delete process.env.XPAG_LEMBRETES;
+
+    bloco('lembretes: o endpoint (segredo obrigatorio, repeticao, moeda)');
+    lem._limpar();
+    const secretAntes = config.webhook.xpagSecret;
+    const cHttp = { evento: 'criada', pedido: 'HTTP-1', valor: 109, moeda: 'MXN', pais: 'MX', metodo: 'spei', cliente: { nome: 'Teste', telefone: '55 9999 8888' }, pagamento: { clabe: '012', linkPedido: 'https://phazegames.com/mexico?pedido=HTTP-1' } };
+    t('criada sem o segredo na URL: 401 e nao agenda', (await postar(cHttp)) === 401 && !dados()['HTTP-1']);
+    t('criada com segredo errado: 401', (await postar(cHttp, 'errado')) === 401 && !dados()['HTTP-1']);
+    config.webhook.xpagSecret = '';
+    t('segredo NAO configurado no bot: criada recusada (401)', (await postar(cHttp)) === 401 && !dados()['HTTP-1']);
+    config.webhook.xpagSecret = secretAntes;
+    t('processarRepasse direto sem segredo tambem recusa', await (async () => { config.webhook.xpagSecret = ''; const r = await require('./src/xpagVendas').processarRepasse(cHttp); config.webhook.xpagSecret = secretAntes; return r.ok === false && !dados()['HTTP-1']; })());
+    t('criada com o segredo: 200 e agenda', (await postar(cHttp, 'segredo')) === 200 && dados()['HTTP-1'] && dados()['HTTP-1'].numero === '525599998888');
+    const n0Http = Object.keys(dados()).length;
+    await postar({ ...cHttp, valor: 999 }, 'segredo');
+    t('criada repetida via HTTP: nao duplica nem muda', Object.keys(dados()).length === n0Http && dados()['HTTP-1'].valor === 109);
+    await postar({ ...cHttp, pedido: 'HTTP-2', moeda: 'BRL' }, 'segredo');
+    t('moeda sem lembrete (BRL) e ignorada', !dados()['HTTP-2']);
+    await postar({ ...cHttp, pedido: 'HTTP-3', valor: 0 }, 'segredo');
+    t('valor invalido e ignorado', !dados()['HTTP-3']);
+    await postar({ ...cHttp, pedido: 'HTTP-4', pagamento: { checkoutUrl: 'javascript:alert(1)', linkPedido: 'ftp://x', clabe: '012' } }, 'segredo');
+    t('link que nao e http(s) e descartado', dados()['HTTP-4'] && !dados()['HTTP-4'].pagamento.checkoutUrl && !dados()['HTTP-4'].pagamento.linkPedido);
+    await postar({ ...cHttp, pedido: 'HTTP-5', cliente: { nome: 'Doc', telefone: '55 7777 6666', documento: 'PEPJ800101HDFRRL09' } }, 'segredo');
+    t('documento (CURP/RFC) nunca e guardado', !JSON.stringify(lem._dados()).includes('PEPJ800101'));
+
+    bloco('lembretes: aviso de pago em espanhol (Colombia sem DDI no telefone)');
+    enviadas.length = 0;
+    estadoReal.COPLEMB = { ok: true, type: 'cashin', status: 'confirmed', amount: 45900, currency: 'COP', method: 'NEQUI_QR', e2e: 'COPLEMB', transaction_id: 'pr_coplemb', external_id: 'CO-L-PAGO' };
+    await postar({ evento: 'pago', pedido: 'CO-L-PAGO', transacao: 'pr_coplemb', e2e: 'COPLEMB', valor: 45900, moeda: 'COP', cliente: { nome: 'Ana Gomez', telefone: '300 123 4567' } }, 'segredo');
+    const confCo = para('573001234567')[0];
+    t('COP: confirmacao vai para o 57 certo, em espanhol, em pesos', !!confCo && /pago confirmado/.test(confCo.texto) && confCo.texto.includes('$45.900 COP') && !/pagamento/.test(confCo.texto), confCo && confCo.texto.split('\n').join(' | '));
+    estadoReal.CLLEMB = { ok: true, type: 'cashin', status: 'completed', amount: 6090, currency: 'CLP', method: 'BANK_TRANSFER', e2e: 'CLLEMB', transaction_id: 'CLLEMB', external_id: 'CL-L-PAGO' };
+    await postar({ evento: 'pago', pedido: 'CL-L-PAGO', transacao: 'CLLEMB', e2e: 'CLLEMB', valor: 6090, moeda: 'CLP', cliente: { nome: 'Juan', telefone: '9 8765 4321' } }, 'segredo');
+    const confCl = para('56987654321')[0];
+    t('CLP: confirmacao para o 56 certo, em espanhol', !!confCl && /Recibimos tu pago de \*\$6\.090 CLP\*/.test(confCl.texto), confCl && confCl.texto.split('\n')[0]);
+    const sv2 = require('./src/xpagVendas');
+    const ptConf = sv2.textoAoCliente({ nome: 'Carla', valor: 119, moedaCod: 'MXN', pedido: null, numero: '5511912345678' });
+    t('confirmacao para +55 continua em portugues', /^Carla, pagamento confirmado/.test(ptConf) && ptConf.includes('MX$ 119,00'));
+    t('confirmacao sem numero cai em portugues', /agamento confirmado/.test(sv2.textoAoCliente({ nome: '', valor: 5, moedaCod: 'MXN', numero: null })));
+
+    bloco('cupom: o aviso da equipe mostra o desconto');
+    enviadas.length = 0;
+    estadoReal.CUPE2E = { ok: true, type: 'cashin', status: 'confirmed', amount: 99, currency: 'MXN', method: 'SPEI', e2e: 'CUPE2E', transaction_id: 'pr_cup', external_id: 'MX-CUP-1' };
+    await postar({ evento: 'pago', pedido: 'MX-CUP-1', transacao: 'pr_cup', e2e: 'CUPE2E', valor: 99, moeda: 'MXN', cliente: { nome: 'Ana', telefone: '55 2222 3333' }, cupom: { codigo: 'word10', tipo: 'percentual', valor: 10, descontoBRL: 2.99, subtotalBRL: 29.9 } }, 'segredo');
+    const avCup = enviadas.find((e) => e.para === GRUPO);
+    t('aviso da equipe: Cupom WORD10 (10%, -R$ 2,99 no pedido)', !!avCup && avCup.texto.includes('Cupom *WORD10* (10%, -R$ 2,99 no pedido)'), avCup && avCup.texto.split('\n').filter((l) => /Cupom/.test(l)).join('|'));
+    enviadas.length = 0;
+    estadoReal.ZCUP2E2E = { ok: true, type: 'cashin', status: 'confirmed', amount: 109, currency: 'MXN', e2e: 'ZCUP2E2E', transaction_id: 'pr_zcup2', external_id: 'MX-ZCUP-2' };
+    await postar({ evento: 'pago', pedido: 'MX-ZCUP-2', transacao: 'pr_zcup2', e2e: 'ZCUP2E2E', valor: 109, moeda: 'MXN' }, 'segredo');
+    t('sem cupom: aviso sem a linha de cupom', !/Cupom/.test(enviadas.find((e) => e.para === GRUPO)?.texto || 'Cupom'));
+
+    bloco('lembretes: textos (variantes, emojis, paragrafos)');
+    {
+      const EMOJI = /\p{Extended_Pictographic}/gu;
+      const cobs = {
+        mx: { nome: 'Ana', valor: 1090, moeda: 'MXN', pais: 'MX', metodo: 'spei', expiraEm: T0 + 5 * HORA, pagamento: { clabe: '012345678901234567', banco: 'STP', beneficiario: 'Zypher', linkPedido: 'https://phazegames.com/mexico?pedido=X' } },
+        ox: { nome: '', valor: 250.5, moeda: 'MXN', pais: 'MX', metodo: 'oxxo', expiraEm: T0 + 30 * HORA, pagamento: { referenciaOxxo: '123', urlVoucher: 'https://v.test/1' } },
+        co: { nome: 'Ana', valor: 39900, moeda: 'COP', pais: 'CO', metodo: 'nequi_qr', expiraEm: T0 + 45 * MINU, pagamento: { copiaECola: '000201EMV' } },
+        br: { nome: 'Ana', valor: 39900, moeda: 'COP', pais: 'CO', metodo: 'breb', expiraEm: null, pagamento: { chaveBreb: '@k', checkoutUrl: 'https://p.test/1' } },
+        cl: { nome: 'Juan', valor: 6090, moeda: 'CLP', pais: 'CL', metodo: 'bank_transfer', expiraEm: null, pagamento: { checkoutUrl: 'https://p.test/cl' } },
+      };
+      let ruins = [];
+      let total = 0;
+      for (const [k, c] of Object.entries(cobs)) {
+        for (const tipo of ['r1', 'r2', 'r3', 'rapido', 'vencida']) {
+          for (const lingua of ['es', 'pt']) {
+            for (let vv = 0; vv < 3; vv++) {
+              const tx = lem.montarTexto(c, { tipo }, lingua, { agora: T0, variante: vv });
+              total++;
+              const emojis = (tx.match(EMOJI) || []).length;
+              if (emojis < 2 || emojis > 3 || /undefined|null|NaN|—|taobao|fornecedor|proveedor|\*\*/i.test(tx) || !/\n\n/.test(tx) || tx.length > 700) ruins.push(`${k}/${tipo}/${lingua}/${vv}: ${emojis} emojis`);
+            }
+          }
+        }
+      }
+      t(`${total} textos (5 cobrancas x 5 tipos x 2 idiomas x 3 variantes): 2-3 emojis, paragrafos, sem lixo`, ruins.length === 0, ruins.slice(0, 4).join('; '));
+      const a = [0, 1, 2].map((vv) => lem.montarTexto(cobs.mx, { tipo: 'r1' }, 'es', { variante: vv }).split('\n')[0]);
+      t('tres variantes de abertura diferentes', new Set(a).size === 3);
+      t('MXN com centavos: $250.50 MXN', lem.montarTexto(cobs.ox, { tipo: 'r1' }, 'es', { variante: 0 }).includes('$250.50 MXN'));
+      t('sem nome: "¡Hola!" sem virgula solta', /^¡Hola!/.test(lem.montarTexto(cobs.ox, { tipo: 'r1' }, 'es', { variante: 0 })) || /^¡Hola! /.test(lem.montarTexto(cobs.ox, { tipo: 'r1' }, 'es', { variante: 0 })));
+    }
   }
 
   bloco('sem credenciais / desligada');

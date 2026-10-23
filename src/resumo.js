@@ -145,6 +145,13 @@ async function montar({ agora = Date.now(), parcial = false } = {}) {
 
   if (codigos != null) linhas.push(`🔑 Códigos entregues: *${codigos}*`);
 
+  // Cobranças da XPag geradas e ainda não pagas (os lembretes ao cliente só
+  // saem quando há telefone; as sem telefone ficam para a equipe ver aqui).
+  try {
+    const pend = require('./xpagLembretes').pendentes(agora);
+    if (pend.total) linhas.push(`⏳ Pendentes XPag: *${pend.total}*${pend.semTelefone ? ` (${pend.semTelefone} sem telefone)` : ''}`);
+  } catch { /* sem lembretes, sem linha */ }
+
   if (!parcial) linhas.push('', variar('despedida', DESPEDIDAS));
   return { texto: linhas.join('\n'), membros: n };
 }

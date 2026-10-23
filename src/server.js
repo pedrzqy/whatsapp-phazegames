@@ -343,6 +343,7 @@ app.post('/webhooks/xpag', async (req, res) => {
       const r = await require('./xpagVendas').processarRepasse(req.body);
       if (!r.ok) console.warn(`[webhooks/xpag] repasse NAO registrado: ${r.motivo}`);
       else if (r.alerta) console.log(`[webhooks/xpag] repasse ${r.alerta}: equipe avisada`);
+      else if (r.lembrete) console.log(`[webhooks/xpag] repasse ${r.lembrete}: lembretes de pagamento ${r.novo === false ? 'ja estavam agendados (repeticao ignorada)' : 'atualizados'}`);
       else console.log(`[webhooks/xpag] repasse ${r.novo ? 'registrado' : 'ja estava registrado (repeticao ignorada)'}`);
     } catch (e) {
       console.error('[webhooks/xpag] falha no repasse:', e.message);
@@ -506,6 +507,7 @@ const server = ehOPrograma && app.listen(config.port, () => {
     console.error('[xpag] !!! ATENCAO: XPAG_WEBHOOK_SECRET VAZIO. Repasses do phaze-xpag (vendas MXN/COP/CLP) serao RECUSADOS ate definir o segredo. Sem ele a URL do webhook e aberta e qualquer um poderia registrar uma venda falsa.');
   }
   { const x = require('./xpag'); console.log(x.configurado() ? `[xpag] ligada (${config.xpag.url}); webhook ${config.webhook.xpagSecret ? 'com' : 'SEM'} token na URL` : `[xpag] DESLIGADA (${x.ligado() ? 'sem XPAG_CLIENT_ID/XPAG_CLIENT_SECRET' : 'XPAG_ENABLED=false'}) — vendas em MXN nao serao registradas`); }
+  require('./xpagLembretes').iniciar(); // lembretes de pagamento das cobrancas da XPag (MXN/COP/CLP)
   vendas.iniciar(); // ciclo de venda: cutuca quem gerou pagamento e não pagou
   posvenda.iniciar(); // depois da entrega: pergunta se ativou · reativa quem sumiu
 });

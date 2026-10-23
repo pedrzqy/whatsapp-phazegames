@@ -30,8 +30,12 @@
 const xpag = require('./xpag');
 const moeda = require('./moeda');
 const telefones = require('./telefone');
+const { idiomaDoTelefone } = require('./idioma');
+const lembretes = require('./xpagLembretes');
 
 const minus = (s) => String(s || '').trim();
+
+const PAIS_DA_MOEDA = { MXN: 'MX', COP: 'CO', CLP: 'CL' };
 
 /** CURP/RFC/CPF nunca saem inteiros: so os 4 ultimos. */
 function mascarar(doc) {
@@ -112,23 +116,35 @@ async function vincularCliente(tx, extra = null) {
   }
 
   // 2. Dados que o phaze-xpag guardou do cliente no checkout (repasse).
+  // A pista de pais vem da MOEDA: um colombiano digita 3001234567, e com a
+  // pista errada (MX) isso virava o 52300... de um desconhecido.
+  const pais = PAIS_DA_MOEDA[minus(tx.moeda).toUpperCase()] || 'MX';
   if (!out.numero && extra?.telefone) {
-    out.numero = telefones.paraWhatsApp(extra.telefone, 'MX');
+    out.numero = telefones.paraWhatsApp(extra.telefone, pais);
   }
   if (!out.itens.length && extra?.itens?.length) out.itens = extra.itens;
 
   // 3. Telefone que o proprio pagador deixou na XPag (se a API devolver).
   if (!out.numero && tx.pagador?.telefone) {
-    out.numero = telefones.paraWhatsApp(tx.pagador.telefone, 'MX');
+    out.numero = telefones.paraWhatsApp(tx.pagador.telefone, pais);
   }
   return out;
 }
 
-// O cliente e mexicano, mas o bot ainda nao tem textos em espanhol (nem
-// saudacoes.js nem vendas.js): esta mensagem sai em portugues, como o resto.
-// Para trocar o idioma, basta mexer aqui.
-function textoAoCliente({ nome, valor, moedaCod, pedido }) {
+// A mensagem ao cliente segue o idioma do DDI do telefone (idioma.js):
+// espanhol para Mexico, Colombia, Chile e demais paises hispanofalantes,
+// portugues para o resto. A equipe continua lendo portugues (textoParaEquipe).
+function textoAoCliente({ nome, valor, moedaCod, pedido, numero }) {
   const primeiro = nome ? String(nome).trim().split(/\s+/)[0] : '';
+  if (idiomaDoTelefone(numero) === 'es') {
+    return [
+      `${primeiro ? `${primeiro}, ¡p` : '¡P'}ago confirmado! ✅`,
+      '',
+      `Recibimos tu pago de *${lembretes.dinheiro(valor, moedaCod, 'es')}*${pedido ? ` (pedido *${pedido}*)` : ''}.`,
+      '',
+      'Ya estamos preparando tu entrega y te avisamos por aquí en cuanto esté lista 👍',
+    ].join('\n');
+  }
   return [
     `${primeiro ? `${primeiro}, p` : 'P'}agamento confirmado ✅`,
     '',
@@ -138,7 +154,7 @@ function textoAoCliente({ nome, valor, moedaCod, pedido }) {
   ].join('\n');
 }
 
-function textoParaEquipe({ tx, vinculo, numero, avisado, chave, manual }) {
+function textoParaEquipe({ tx, vinculo, numero, avisado, chave, manual, cupom }) {
   const linhas = [`💰 *Venda paga (${moeda.paisDaMoeda(tx.moeda)})* — ${moeda.formatar(tx.valor, tx.moeda)}${tx.metodo ? ` · ${tx.metodo}` : ''}`, ''];
   if (vinculo.nome) linhas.push(`*${vinculo.nome}*`);
   if (numero) linhas.push(`+${numero}`);
@@ -147,6 +163,12 @@ function textoParaEquipe({ tx, vinculo, numero, avisado, chave, manual }) {
   if (vinculo.itens.length) {
     linhas.push('');
     for (const i of vinculo.itens) linhas.push(`• ${i.nome}${i.quantidade > 1 ? ` (${i.quantidade}x)` : ''}`);
+  }
+  if (cupom) {
+    const partes = [];
+    if (cupom.tipo === 'percentual' && cupom.valor) partes.push(`${cupom.valor}%`);
+    if (cupom.descontoBRL) partes.push(`-${moeda.formatar(cupom.descontoBRL, 'BRL')} no pedido`);
+    linhas.push('', `🏷️ Cupom *${cupom.codigo}*${partes.length ? ` (${partes.join(', ')})` : ''}`);
   }
   linhas.push('', '⚠️ *Entregar manualmente* — venda pela XPag, o bot não envia chave nesta venda.');
   if (avisado) linhas.push('✅ Cliente avisado do pagamento no WhatsApp.');
@@ -171,6 +193,10 @@ async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manu
   if (!Number.isFinite(tx.valor) || tx.valor <= 0) return { ok: false, motivo: 'a XPag nao informou o valor' };
   const chave = chaveDe(tx);
   if (!chave) return { ok: false, motivo: 'sem e2e, transaction_id nem external_id para identificar a venda' };
+
+  // Pago confirmado: para os lembretes desta cobranca (por qualquer caminho que
+  // a confirmacao chegue: repasse, webhook cru ou #xpag registrar).
+  if (tx.externalId) lembretes.encerrar(tx.externalId, 'paga');
 
   const vendas = require('./vendas');
   const ids = idsDe(tx, [codigoDigitado]);
@@ -200,7 +226,7 @@ async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manu
   let avisado = false;
   if (vinculo.numero) {
     try {
-      await require('./sender').send(vinculo.numero, textoAoCliente({ nome: vinculo.nome, valor: t.valor, moedaCod, pedido: vinculo.pedido }));
+      await require('./sender').send(vinculo.numero, textoAoCliente({ nome: vinculo.nome, valor: t.valor, moedaCod, pedido: vinculo.pedido, numero: vinculo.numero }));
       avisado = true;
     } catch (e) {
       console.warn('[xpag] nao consegui avisar o cliente:', e.message);
@@ -215,7 +241,7 @@ async function registrar(tx, { fallbackMoeda = null, codigoDigitado = null, manu
   }
 
   try {
-    await vendas.avisarVenda(textoParaEquipe({ tx: extra?.email && !t.pagador?.email ? { ...t, pagador: { ...t.pagador, email: extra.email } } : t, vinculo, numero: vinculo.numero, avisado, chave: r.chave, manual }));
+    await vendas.avisarVenda(textoParaEquipe({ tx: extra?.email && !t.pagador?.email ? { ...t, pagador: { ...t.pagador, email: extra.email } } : t, vinculo, numero: vinculo.numero, avisado, chave: r.chave, manual, cupom: extra?.cupom || null }));
   } catch (e) {
     console.warn('[xpag] nao consegui avisar a equipe:', e.message);
   }
@@ -256,6 +282,22 @@ function itensDoRepasse(lista) {
     .slice(0, 20);
 }
 
+/** Cupom que o cliente usou na loja (so para a equipe saber do desconto). */
+function cupomDoRepasse(c) {
+  if (!c || typeof c !== 'object') return null;
+  const codigo = textoCurto(c.codigo, 40).toUpperCase();
+  if (!codigo) return null;
+  const desc = Number(c.descontoBRL);
+  const sub = Number(c.subtotalBRL);
+  return {
+    codigo,
+    tipo: c.tipo === 'fixo' ? 'fixo' : 'percentual',
+    valor: Number.isFinite(Number(c.valor)) ? Number(c.valor) : null,
+    descontoBRL: Number.isFinite(desc) && desc > 0 ? desc : null,
+    subtotalBRL: Number.isFinite(sub) && sub > 0 ? sub : null,
+  };
+}
+
 /** Dados do cliente no repasse (sem documento: nunca pedimos CURP/RFC aqui). */
 function extraDoRepasse(c) {
   const cli = c.cliente && typeof c.cliente === 'object' ? c.cliente : {};
@@ -264,6 +306,7 @@ function extraDoRepasse(c) {
     email: textoCurto(cli.email ?? c.email, 120),
     telefone: textoCurto(cli.telefone ?? c.telefone, 30),
     itens: itensDoRepasse(c.itens ?? cli.itens),
+    cupom: cupomDoRepasse(c.cupom),
   };
 }
 
@@ -298,6 +341,20 @@ async function processarRepasse(corpo) {
     try { await require('./vendas').avisarVenda(linhas.filter(Boolean).join('\n')); }
     catch (e) { console.warn('[xpag] nao consegui avisar a equipe do repasse:', e.message); }
     return { ok: true, alerta: evento };
+  }
+
+  // Lembretes de pagamento: a cobranca foi criada / venceu. Nada disto mexe em
+  // venda nem em dinheiro; so agenda ou cancela mensagens ao cliente.
+  if (evento === 'criada') {
+    if (!config.xpag.enabled) return { ok: false, motivo: 'XPAG_ENABLED=false' };
+    const r = lembretes.registrarCriada(c);
+    return r.ok ? { ...r, lembrete: 'criada' } : r;
+  }
+  if (evento === 'expirada') {
+    const pedido = minus(c.pedido);
+    if (!pedido) return { ok: false, motivo: 'expirada sem pedido' };
+    lembretes.encerrar(pedido, 'expirada');
+    return { ok: true, lembrete: 'expirada' };
   }
 
   if (evento !== 'pago') return { ok: false, motivo: `evento "${evento || '(vazio)'}" desconhecido` };

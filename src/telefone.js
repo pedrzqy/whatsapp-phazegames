@@ -30,7 +30,7 @@ const DDDS_BR = new Set(
 );
 
 /**
- * País a partir do que o checkout/payload trouxer: 'MX', 'BR' ou null.
+ * País a partir do que o checkout/payload trouxer: 'MX', 'BR', 'CO', 'CL' ou null.
  * Aceita sigla, nome, código de discagem e moeda (MXN → MX, BRL → BR).
  */
 function paisDe(valor) {
@@ -40,6 +40,8 @@ function paisDe(valor) {
   if (!s) return null;
   if (['mx', 'mex', 'mexico', 'mxn', '52', '+52', '0052'].includes(s)) return 'MX';
   if (['br', 'bra', 'brasil', 'brazil', 'brl', '55', '+55', '0055'].includes(s)) return 'BR';
+  if (['co', 'col', 'colombia', 'cop', '57', '+57', '0057'].includes(s)) return 'CO';
+  if (['cl', 'chl', 'chile', 'clp', '56', '+56', '0056'].includes(s)) return 'CL';
   return null;
 }
 
@@ -75,6 +77,18 @@ function paraWhatsApp(telefone, pais) {
   if (so.length === 12 && so.startsWith('52')) return so;
   if (so.length === 12 && so.startsWith('55')) return so;
   if (so.length === 13 && so.startsWith('55')) return so;
+
+  // Colômbia (57 + 10 dígitos, celular começa com 3) e Chile (56 + 9 dígitos,
+  // celular começa com 9). Só com a pista do pedido: sem ela 10 dígitos
+  // continuam sendo Brasil/México como sempre.
+  if (p === 'CO') {
+    if (so.length === 12 && so.startsWith('57')) return so;
+    return /^3\d{9}$/.test(so) ? `57${so}` : null;
+  }
+  if (p === 'CL') {
+    if (so.length === 11 && so.startsWith('56')) return so;
+    return /^9\d{8}$/.test(so) ? `56${so}` : null;
+  }
 
   if (so.length === 11) {
     // México sem o 52: 1 + 10 dígitos (o antigo "móvil").
