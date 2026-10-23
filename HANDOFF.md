@@ -343,3 +343,24 @@ hoje tem uma linha que aparece. O `#status` nasceu disso: foi ele que achou o
 4. Comente o porquê no código, com o sintoma que o bug produzia.
 
 **Comece perguntando o que ele quer fazer hoje.** Não saia mexendo.
+
+## 11 · XPag (México, MXN) — vendas fora da Nerix
+
+- `src/xpag.js` fala com a API (cobrança SPEI/CLABE/OXXO, `/consult-transaction`, `lerWebhook`).
+  `src/xpagVendas.js` registra a venda confirmada, avisa a equipe e (se houver telefone) o cliente.
+  `src/moeda.js` é a TABELA DE MOEDAS (BRL, MXN, COP, CLP, ARS, BOB, USD, VES, USDT, USDC): símbolo, casas
+  decimais, país. Moeda nova = uma linha lá. Todo total é um mapa por moeda: reais e pesos nunca se somam
+  (resumo do dia e `#vendas` mostram "R$ 1.234,00 + MX$ 119,00").
+- Webhook: `POST /webhooks/xpag?secret=<XPAG_WEBHOOK_SECRET>`. Não é assinado: o bot SEMPRE relê o estado em
+  `/consult-transaction` e só registra se `status=confirmed`. Chave = e2e (único por pagamento); repetição não
+  conta em dobro. Chave/CLABE aberta (`origin: static`) repete `transaction_id`/`external_id`: só o e2e vale.
+- A venda entra no mesmo `data/vendas.json` com `moeda`, `valor`, `origem: 'xpag'`, `ids`. Documento do pagador
+  fica mascarado (4 últimos). O bot NÃO entrega chave dessas vendas: o aviso diz "Entregar manualmente".
+- Telefone só se vincula sem chute: telefone do pagador (se a API devolver) ou pedido da loja cujo código foi o
+  `external_id` e cujo valor bate. Senão, só a equipe é avisada. Texto ao cliente está em português
+  (`textoAoCliente`), porque o bot ainda não tem textos em espanhol.
+- `#xpag hoje` · `#xpag <código>` (tenta e2e, transaction_id, request_number, external_id) ·
+  `#xpag <código> registrar [MXN]` (idempotente; usa a data da API).
+- Env: `XPAG_ENABLED`, `XPAG_CLIENT_ID`, `XPAG_CLIENT_SECRET`, `XPAG_API_URL`, `XPAG_WEBHOOK_SECRET`,
+  `XPAG_WEBHOOK_URL` (ver `.env.example`). A XPag NÃO tem cadastro de webhook no painel: `webhook_url` vai no
+  corpo de cada `/cashin`.

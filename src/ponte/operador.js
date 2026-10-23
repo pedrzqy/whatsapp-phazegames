@@ -40,6 +40,7 @@ const AJUDA = [
   '*#status* — testa tudo e diz o que está errado',
   '*#resumo* — o resumo do dia até agora (o completo sai sozinho à noite no grupo da equipe)',
   '*#fila* — quem está sendo atendido e quem espera',
+  '*#xpag* — vendas pela XPag (México): *#xpag hoje* · *#xpag <código>* consulta · *#xpag <código> registrar* lança a venda se estiver confirmada',
   '*#vendas* — vendas de hoje, faturamento e o que falta entregar',
   '*#liberar* — destrava depois de resolver a verificação',
   '*#sms 123456* — repassa o código SMS que chegou no seu celular',
@@ -113,7 +114,7 @@ const min = (ms) => Math.round(ms / 60000);
 // decidir e para logar o motivo de ter ignorado), e duas copias divergiriam --
 // que e como o "script" escapou do filtro de vocabulario uma vez.
 const RE_COMANDOS =
-  /^#(fila|status|vendas|historico|liberar|ok|enviar|editar|responder|casos|analisar|admin|nao|não|pular|ajuda|sms|taobao|teste|limpar|destravar|atender|auto|recarregar|grupo|staff|resumo)\b/i;
+  /^#(fila|status|vendas|historico|liberar|ok|enviar|editar|responder|casos|analisar|admin|nao|não|pular|ajuda|sms|taobao|teste|limpar|destravar|atender|auto|recarregar|grupo|staff|resumo|xpag)\b/i;
 
 /** É comando de operador? */
 function ehComando(from, texto) {
@@ -816,6 +817,8 @@ async function executar(texto, de = '', ctx = {}) {
   // pede uma atitude.
   if (cmd === 'resumo') return require('../resumo').parcial();
 
+  if (cmd === 'xpag') return require('../xpagVendas').comando(resto);
+
   if (cmd === 'vendas') {
     let lista = [];
     try {
@@ -861,14 +864,28 @@ async function executar(texto, de = '', ctx = {}) {
       }
     }
 
-    const brl = (n) => `R$ ${n.toFixed(2).replace('.', ',')}`;
+    // Um total POR MOEDA: a Nerix vende em reais, a XPag em pesos (MXN), e os
+    // dois nunca se somam. As vendas da XPag vem do que o bot registrou
+    // (xpagVendas.js), porque a Nerix nao sabe delas.
+    const moeda = require('../moeda');
+    const totais = {};
+    moeda.somar(totais, total, 'BRL');
+    const xp = vendas.vendasExternasDoDia(hojeBRT);
+    for (const v of xp) moeda.somar(totais, v.valor, v.moeda);
     const linhas = [
       '📊 *Hoje*',
       '',
-      `Vendas pagas: *${pagos}*`,
-      `Faturado: *${brl(total)}*`,
+      `Vendas pagas: *${pagos + xp.length}*${xp.length ? ` (${xp.length} pela XPag)` : ''}`,
+      `Faturado: *${moeda.formatarTotais(totais)}*`,
       `Aguardando pagamento: ${aguardando}`,
     ];
+    if (xp.length) {
+      linhas.push(
+        '',
+        `⚠️ *${xp.length} venda(s) XPag* — entrega na mão (o bot não entrega essas):`,
+        ...xp.slice(0, 8).map((v) => `• ${moeda.formatar(v.valor, v.moeda)}${v.pagador ? ` — ${v.pagador}` : ''}${v.telefone ? ` (+${v.telefone})` : ' (sem telefone)'}`),
+      );
+    }
 
     if (semChave.length) {
       linhas.push(
@@ -879,7 +896,7 @@ async function executar(texto, de = '', ctx = {}) {
       if (semChave.length > 8) linhas.push(`_e mais ${semChave.length - 8}._`);
     }
 
-    if (!doDia.length) {
+    if (!doDia.length && !xp.length) {
       linhas.push('', '_Nenhum pedido hoje ainda._');
     }
 

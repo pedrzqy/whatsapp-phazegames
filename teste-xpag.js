@@ -16,6 +16,10 @@ process.env.PONTE_OPERADOR_NUMERO = '5541999999999';
 process.env.PONTE_BRACO_KEY = 'teste';
 process.env.DEEPSEEK_API_KEY = '';
 process.env.PONTE_DATA_DIR = require('path').join(require('os').tmpdir(), 'phaze-teste-xpag');
+require('fs').rmSync(process.env.PONTE_DATA_DIR, { recursive: true, force: true });
+process.env.PONTE_HUMANIZA = 'false';
+process.env.PONTE_ATIVA = 'true';
+process.env.EVOLUTION_API_KEY = 'teste';
 process.env.XPAG_CLIENT_ID = 'xpagsandbox_00000000';
 process.env.XPAG_CLIENT_SECRET = '202620262026202620262026';
 
@@ -188,6 +192,175 @@ function erroDaApi(status, codigo, mensagem) {
   t('simula pagamento', r.ok === true && chamadas[0].rota === '/sandbox/simulate');
   r = await xpag.simular({ transacao: 'pr_1', desfecho: 'qualquer' });
   t('desfecho invalido e recusado', r.ok === false && r.codigo === 'desfecho_invalido');
+
+  // ═══════════════════════════════════════════════════════════════
+  // Venda confirmada: webhook -> consulta -> registro (xpagVendas.js)
+  // ═══════════════════════════════════════════════════════════════
+  const vendas = require('./src/vendas');
+  const resumo = require('./src/resumo');
+  const moeda = require('./src/moeda');
+  const nerix = require('./src/nerix');
+  const sender = require('./src/sender');
+  const operador = require('./src/ponte/operador');
+
+  bloco('moeda: tabela generica');
+  t('BRL com milhar', moeda.formatar(1234, 'BRL') === 'R$ 1.234,00', moeda.formatar(1234, 'BRL'));
+  t('MXN', moeda.formatar(119, 'MXN') === 'MX$ 119,00');
+  t('CLP sem centavo', moeda.formatar(25000.4, 'CLP') === 'CLP$ 25.000');
+  t('COP sem centavo', moeda.formatar(80000, 'COP') === 'COL$ 80.000');
+  t('moeda desconhecida mostra o codigo', moeda.formatar(5, 'XYZ') === 'XYZ 5,00');
+  t('totais separados por moeda', moeda.formatarTotais({ BRL: 1234, MXN: 119 }) === 'R$ 1.234,00 + MX$ 119,00');
+  t('totais vazios = R$ 0,00', moeda.formatarTotais({}) === 'R$ 0,00');
+
+  // Duble da XPag: devolve o estado "real" que o teste definir, por parametro.
+  const E2E = 'MBAN01002610210063633699';
+  let estadoReal = {};
+  const consultas = [];
+  xpag._usarCliente({
+    get: async (rota, { params }) => {
+      consultas.push(params);
+      const chave = params.e2e || params.transaction_id || params.request_number || params.external_id;
+      const d = estadoReal[chave] || Object.values(estadoReal).find((x) => x.e2e === chave || x.transaction_id === chave);
+      if (!d) { throw erroDaApi(404, 'transaction_not_found', 'nao achei'); }
+      return { data: d };
+    },
+    post: async () => ({ data: {} }),
+  });
+  const confirmadoMXN = {
+    ok: true, type: 'cashin', status: 'confirmed', amount: 119, currency: 'MXN', method: 'SPEI',
+    e2e: E2E, transaction_id: 'pr_aaa', external_id: 'PED-77',
+    payer: { name: 'Maria Lopez', document: 'LOPM800101MDFRRL09', phone: '+52 1 627 178 2434' },
+    updated_at: '2026-10-21 10:00:00',
+  };
+
+  const enviadas = [];
+  sender.send = async (para, texto) => { enviadas.push({ para, texto }); return true; };
+  nerix.getOrder = async () => { throw new Error('404'); };
+  const GRUPO = '120363@g.us';
+  vendas.definirGrupoVendas(GRUPO);
+
+  const http = require('http');
+  const { app } = require('./src/server');
+  const srv = http.createServer(app);
+  await new Promise((ok) => srv.listen(0, ok));
+  const porta = srv.address().port;
+  const postar = async (corpo, secret = '') => {
+    const r = await fetch(`http://127.0.0.1:${porta}/webhooks/xpag${secret ? `?secret=${secret}` : ''}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo),
+    });
+    await new Promise((ok) => setTimeout(ok, 150));
+    return r.status;
+  };
+  const corpoWebhook = { type: 'cashin', status: 'confirmed', amount: 119, currency: 'MXN', method: 'SPEI', e2e: E2E, transaction_id: 'pr_aaa', external_id: 'PED-77' };
+  const config = require('./src/config');
+  config.webhook.xpagSecret = 'segredo';
+  const nXpag = () => Object.values(vendas._dados().pedidos).filter((x) => x.origem === 'xpag').length;
+
+  bloco('webhook: confirmado registra uma vez');
+  estadoReal = { [E2E]: confirmadoMXN, pr_aaa: confirmadoMXN };
+  t('sem o segredo da URL: 401 e nada registrado', (await postar(corpoWebhook)) === 401 && enviadas.length === 0);
+  t('com segredo: 200', (await postar(corpoWebhook, 'segredo')) === 200);
+  const reg = Object.values(vendas._dados().pedidos).filter((x) => x.origem === 'xpag');
+  t('uma venda registrada', reg.length === 1, String(reg.length));
+  t('moeda MXN, valor numerico, origem xpag', reg[0]?.moeda === 'MXN' && reg[0]?.valor === 119 && reg[0]?.origem === 'xpag');
+  t('documento fica mascarado', reg[0]?.documento === '****RL09' && !JSON.stringify(vendas._dados()).includes('LOPM800101'), JSON.stringify(reg[0]));
+  const aviso = enviadas.find((e) => e.para === GRUPO);
+  t('aviso no grupo da equipe em MXN', !!aviso && /Venda paga \(México\)/.test(aviso.texto) && /MX\$ 119,00/.test(aviso.texto), aviso && aviso.texto.split('\n')[0]);
+  t('aviso diz entregar manualmente', /Entregar manualmente/.test(aviso?.texto || ''));
+  t('aviso nao traz o documento inteiro', !/LOPM800101MDFRRL09/.test(aviso?.texto || ''));
+  const cli = enviadas.find((e) => e.para === '526271782434');
+  t('cliente avisado no telefone do pagador (52 + 10 digitos)', !!cli && /pagamento confirmado/i.test(cli.texto) && /MX\$ 119,00/.test(cli.texto));
+
+  bloco('webhook: repeticao e duplicata');
+  const antes = enviadas.length;
+  await postar(corpoWebhook, 'segredo');
+  await postar({ ...corpoWebhook, transaction_id: 'outro' }, 'segredo');
+  t('repeticao nao conta em dobro', nXpag() === 1);
+  t('repeticao nao avisa de novo', enviadas.length === antes);
+
+  bloco('webhook: corpo falso com estado real diferente');
+  estadoReal.E999FALSO = { ...confirmadoMXN, e2e: 'E999FALSO', transaction_id: 'pr_falso', status: 'pending' };
+  const antes2 = enviadas.length;
+  await postar({ ...corpoWebhook, e2e: 'E999FALSO', transaction_id: 'pr_falso', external_id: 'X' }, 'segredo');
+  t('pending real: ignorado', nXpag() === 1 && enviadas.length === antes2);
+  await postar({ ...corpoWebhook, e2e: 'NAOEXISTE', transaction_id: 'pr_nada' }, 'segredo');
+  t('transacao inexistente: ignorada', nXpag() === 1);
+
+  bloco('CLABE aberta: dois pagamentos, mesmo external_id/transaction_id');
+  estadoReal.EST1 = { ok: true, type: 'cashin', status: 'confirmed', amount: 100, currency: 'MXN', e2e: 'EST1', transaction_id: 'PED-9', external_id: 'PED-9', origin: 'static' };
+  estadoReal.EST2 = { ...estadoReal.EST1, e2e: 'EST2', amount: 50 };
+  const est = { type: 'cashin', origin: 'static', status: 'confirmed', currency: 'MXN', external_id: 'PED-9', transaction_id: 'PED-9' };
+  await postar({ ...est, amount: 100, e2e: 'EST1' }, 'segredo');
+  await postar({ ...est, amount: 50, e2e: 'EST2' }, 'segredo');
+  await postar({ ...est, amount: 50, e2e: 'EST2' }, 'segredo');
+  t('cada e2e e uma venda (2 novas, repeticao ignorada)', nXpag() === 3, String(nXpag()));
+  t('consulta de CLABE aberta foi pelo e2e', consultas.some((p) => p.e2e === 'EST1'));
+
+  bloco('sem telefone: so a equipe');
+  estadoReal.SEMTEL = { ok: true, type: 'cashin', status: 'confirmed', amount: 80, currency: 'MXN', e2e: 'SEMTEL', transaction_id: 'pr_st' };
+  enviadas.length = 0;
+  await postar({ ...corpoWebhook, e2e: 'SEMTEL', transaction_id: 'pr_st', external_id: undefined, amount: 80 }, 'segredo');
+  t('so o grupo recebe', enviadas.length === 1 && enviadas[0].para === GRUPO, String(enviadas.length));
+  t('aviso manda falar com o cliente na mao', /Sem telefone vinculado/.test(enviadas[0]?.texto || ''));
+
+  bloco('vinculo por pedido da loja so quando o valor bate');
+  nerix.getOrder = async () => ({ data: { order_number: 'PED-55', status: 'pending', payment_status: 'pending', total: 119, customer_name: 'Ana', customer_phone: '5216271112222', items: [{ product_name: 'Jogo X', quantity: 1 }] } });
+  estadoReal.LIGA = { ok: true, type: 'cashin', status: 'confirmed', amount: 119, currency: 'MXN', e2e: 'LIGA', transaction_id: 'pr_l', external_id: 'PED-55' };
+  estadoReal.NAOLIGA = { ok: true, type: 'cashin', status: 'confirmed', amount: 300, currency: 'MXN', e2e: 'NAOLIGA', transaction_id: 'pr_nl', external_id: 'PED-55' };
+  enviadas.length = 0;
+  await postar({ ...corpoWebhook, e2e: 'LIGA', transaction_id: 'pr_l', external_id: 'PED-55' }, 'segredo');
+  t('valor bate: avisa o cliente do pedido', enviadas.some((e) => e.para === '526271112222') && enviadas.some((e) => /Jogo X/.test(e.texto)));
+  enviadas.length = 0;
+  await postar({ ...corpoWebhook, e2e: 'NAOLIGA', transaction_id: 'pr_nl', external_id: 'PED-55', amount: 300 }, 'segredo');
+  t('valor diferente: nao vincula, so equipe', enviadas.length === 1 && enviadas[0].para === GRUPO, String(enviadas.length));
+  nerix.getOrder = async () => { throw new Error('404'); };
+
+  bloco('resumo e #vendas: moedas separadas');
+  vendas._dados().pedidos['N-1'] = { visto: Date.now(), notificado: Date.now(), valor: 1234, moeda: 'BRL' };
+  const txt = (await resumo.montar()).texto;
+  t('resumo soma por moeda', /R\$ 1\.234,00 \+ MX\$ /.test(txt), (txt.match(/Vendas:.*/) || [])[0]);
+  nerix.listOrders = async () => ({ data: [] });
+  const vend = await operador.executar('#vendas', '5541999999999');
+  t('#vendas mostra as duas moedas', /Faturado: \*MX\$ /.test(vend) && /pela XPag/.test(vend), vend.split('\n').slice(0, 4).join(' | '));
+  t('#vendas avisa entrega na mao', /entrega na mão/.test(vend));
+  t('#ajuda lista o #xpag', /#xpag/.test(operador.AJUDA));
+  t('#xpag e reconhecido como comando', operador.ehComando('5541999999999', '#xpag hoje'));
+
+  bloco('#xpag: consulta e registrar (HTTP mockado)');
+  const nova = 'MBAN01002610210099999999';
+  estadoReal[nova] = { ...confirmadoMXN, e2e: nova, transaction_id: 'pr_back', external_id: undefined, payer: { name: 'Pedro Cliente', document: 'PECP800101HDFRRL09' }, updated_at: '2026-10-21 09:00:00' };
+  enviadas.length = 0;
+  let out = await operador.executar(`#xpag ${nova}`, '5541999999999');
+  t('consulta mostra status, valor, pagador e ja registrada: nao', /confirmed/.test(out) && /MX\$ 119,00/.test(out) && /Pedro Cliente/.test(out) && /registrada no bot: \*não\*/.test(out), out.replace(/\n/g, ' | '));
+  t('consulta nao mostra documento inteiro', !/PECP800101HDFRRL09/.test(out));
+  t('consulta sozinha nao registra', !vendas.acharVendaExterna([nova]) && enviadas.length === 0);
+  out = await operador.executar(`#xpag ${nova} registrar`, '5541999999999');
+  t('registrar lanca a venda', /Registrada como venda/.test(out) && !!vendas.acharVendaExterna([nova]), out.replace(/\n/g, ' | '));
+  t('registrar avisou a equipe', enviadas.filter((e) => e.para === GRUPO).length === 1);
+  const regB = vendas._dados().pedidos['xpag:' + nova];
+  t('data do backfill vem da API (21/10)', !!regB && new Date(regB.notificado - 3 * 3600 * 1000).toISOString().startsWith('2026-10-21'));
+  enviadas.length = 0;
+  out = await operador.executar(`#xpag ${nova} registrar`, '5541999999999');
+  t('registrar de novo e idempotente', /já estava registrada/i.test(out) && enviadas.length === 0);
+  t('so uma venda desse codigo', Object.keys(vendas._dados().pedidos).filter((k) => k.includes(nova)).length === 1);
+  estadoReal.PEND = { ok: true, type: 'cashin', status: 'pending', amount: 10, currency: 'MXN', e2e: 'PEND' };
+  out = await operador.executar('#xpag PEND registrar', '5541999999999');
+  t('pendente nao registra', /Não registrei/.test(out) && !vendas.acharVendaExterna(['PEND']));
+  out = await operador.executar('#xpag NAOEXISTE123', '5541999999999');
+  t('codigo desconhecido responde sem quebrar', /Não achei/.test(out));
+  out = await operador.executar('#xpag hoje', '5541999999999');
+  t('#xpag hoje lista o que o bot registrou', /Vendas XPag de hoje|Nenhuma venda XPag/.test(out));
+
+  bloco('sem credenciais / desligada');
+  config.xpag.enabled = false;
+  t('XPAG_ENABLED=false desliga', xpag.configurado() === false);
+  out = await operador.executar('#xpag hoje', '5541999999999');
+  t('#xpag avisa que esta desligada', /desligada/i.test(out));
+  const antes3 = Object.keys(vendas._dados().pedidos).length;
+  await postar({ ...corpoWebhook, e2e: 'DESLIGADO1' }, 'segredo');
+  t('webhook desligado nao registra', Object.keys(vendas._dados().pedidos).length === antes3);
+  config.xpag.enabled = true;
+  srv.close();
 
   console.log(`\n${falhas ? `${falhas} FALHA(S)` : 'tudo certo'}\n`);
   process.exit(falhas ? 1 : 0);

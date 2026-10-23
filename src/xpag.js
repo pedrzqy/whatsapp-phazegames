@@ -30,8 +30,13 @@ const TIMEOUT_MS = 20000;
 const OXXO_MIN = 10;
 const OXXO_MAX = 10000;
 
+/** XPAG_ENABLED=false desliga tudo mesmo com as credenciais no Environment. */
+function ligado() {
+  return config.xpag.enabled !== false;
+}
+
 function configurado() {
-  return !!(config.xpag.clientId && config.xpag.clientSecret);
+  return ligado() && !!(config.xpag.clientId && config.xpag.clientSecret);
 }
 
 let http = null;
@@ -104,7 +109,9 @@ function semCredencial() {
   return {
     ok: false,
     codigo: 'nao_configurado',
-    mensagem: 'XPAG_CLIENT_ID e XPAG_CLIENT_SECRET nao estao no Environment do servico',
+    mensagem: ligado()
+      ? 'XPAG_CLIENT_ID e XPAG_CLIENT_SECRET nao estao no Environment do servico'
+      : 'XPAG_ENABLED=false: a integracao esta desligada',
   };
 }
 
@@ -246,6 +253,48 @@ async function pix({ valor, externalId, nome, documento, descricao, webhookUrl, 
   }
 }
 
+/** Primeiro valor preenchido (texto) entre varios caminhos possiveis. */
+function primeiro(...vals) {
+  for (const v of vals) if (v != null && String(v).trim() !== '') return String(v).trim();
+  return '';
+}
+
+/**
+ * Quem pagou, onde quer que a XPag ponha. A doc que temos NAO descreve o
+ * pagador na resposta do /consult-transaction, entao a busca e por uma lista de
+ * lugares plausiveis e tudo e opcional: sem dado, o campo fica vazio e a venda
+ * segue sem telefone (o aviso vai so para a equipe, nunca se adivinha).
+ */
+function lerPagador(d) {
+  const o = d || {};
+  const p = o.payer || o.payer_data || o.payerData || o.customer || o.debtor || o.sender || {};
+  return {
+    nome: primeiro(p.name, p.full_name, p.nome, o.payer_name, o.name),
+    documento: primeiro(p.document, p.tax_id, p.curp, p.rfc, o.payer_document, o.document),
+    telefone: primeiro(p.phone, p.phone_number, p.mobile, p.whatsapp, o.payer_phone, o.phone),
+    email: primeiro(p.email, o.payer_email, o.email),
+  };
+}
+
+/** Uma transacao (ou um item de `payments`) no nosso formato. */
+function lerTransacao(data) {
+  const d = data || {};
+  return {
+    tipo: d.type || null,
+    status: d.status || null,
+    moeda: d.currency ? String(d.currency).toUpperCase() : null,
+    valor: d.amount != null ? Number(d.amount) : null,
+    taxa: d.fee != null ? Number(d.fee) : null,
+    externalId: d.external_id || null,
+    e2e: d.e2e || null,
+    transacao: d.transaction_id || d.request_number || d.id || null,
+    metodo: d.method || null,
+    estatica: d.origin === 'static',
+    pagador: lerPagador(d),
+    em: d.updated_at || d.paid_at || d.created_at || null,
+  };
+}
+
 /**
  * Estado real de uma transacao.
  *
@@ -271,16 +320,7 @@ async function consultar({ transacao, requisicao, externalId, e2e, clabe, limite
 
   try {
     const { data } = await cliente().get('/consult-transaction', { params });
-    return {
-      ok: true,
-      tipo: data.type || null,
-      status: data.status || null,
-      valor: data.amount != null ? Number(data.amount) : null,
-      externalId: data.external_id || null,
-      e2e: data.e2e || null,
-      pagamentos: Array.isArray(data.payments) ? data.payments : null,
-      bruto: data,
-    };
+    return { ok: true, ...lerTransacao(data), pagamentos: Array.isArray(data.payments) ? data.payments.map(lerTransacao) : null, bruto: data };
   } catch (e) {
     return falha(e);
   }
@@ -320,6 +360,7 @@ function lerWebhook(corpo) {
     valor: c.amount != null ? Number(c.amount) : null,
     taxa: c.fee != null ? Number(c.fee) : null,
     transacao: c.transaction_id || c.request_number || null,
+    metodo: c.method || null,
     e2e: c.e2e || null,
     externalId: c.external_id || null,
     estatica: c.origin === 'static',
@@ -333,6 +374,9 @@ module.exports = {
   OXXO_MIN,
   OXXO_MAX,
   configurado,
+  ligado,
+  lerPagador,
+  lerTransacao,
   speiPorValor,
   clabeDaVenda,
   oxxo,

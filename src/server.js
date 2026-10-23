@@ -339,7 +339,14 @@ app.post('/webhooks/xpag', async (req, res) => {
 
   if (evento.tipo !== 'cashin' || evento.status !== 'confirmed') return;
 
-  const real = await xpag.consultar({ transacao: evento.transacao, e2e: evento.e2e });
+  if (!xpag.configurado()) {
+    console.warn('[webhooks/xpag] aviso recebido, mas a integracao esta desligada (sem credenciais ou XPAG_ENABLED=false). Ignorado.');
+    return;
+  }
+
+  // Chave/CLABE de valor aberto: transaction_id e igual em todos os pagamentos,
+  // so o e2e identifica o pagamento do aviso.
+  const real = await xpag.consultar(evento.estatica ? { e2e: evento.e2e } : { transacao: evento.transacao, e2e: evento.e2e });
   if (!real.ok) {
     console.warn(`[webhooks/xpag] nao consegui conferir ${evento.transacao}: ${real.codigo}`);
     return;
@@ -352,7 +359,13 @@ app.post('/webhooks/xpag', async (req, res) => {
     return;
   }
 
-  console.log(`[webhooks/xpag] pagamento conferido: ${evento.externalId || evento.transacao} por R$ ${real.valor}`);
+  try {
+    const r = await require('./xpagVendas').processarWebhook(evento, real);
+    if (!r.ok) console.warn(`[webhooks/xpag] pagamento conferido mas NAO registrado: ${r.motivo}`);
+    else console.log(`[webhooks/xpag] pagamento conferido: ${evento.externalId || evento.transacao} ${r.novo ? 'registrado' : 'ja estava registrado (repeticao ignorada)'}`);
+  } catch (e) {
+    console.error('[webhooks/xpag] falha ao registrar a venda:', e.message);
+  }
 });
 
 app.post('/webhooks/nerix', async (req, res) => {
@@ -463,6 +476,7 @@ const server = ehOPrograma && app.listen(config.port, () => {
   community.start(); // agente de comunidade: posta conteúdo no grupo (Fase 1: só saída)
   ponte.iniciar(); // ponte com o fornecedor da Taobao (fila serial + braço robô)
   require('./resumo').iniciar(); // resumo do dia no grupo da equipe, uma vez por noite
+  { const x = require('./xpag'); console.log(x.configurado() ? `[xpag] ligada (${config.xpag.url}); webhook ${config.webhook.xpagSecret ? 'com' : 'SEM'} token na URL` : `[xpag] DESLIGADA (${x.ligado() ? 'sem XPAG_CLIENT_ID/XPAG_CLIENT_SECRET' : 'XPAG_ENABLED=false'}) — vendas em MXN nao serao registradas`); }
   vendas.iniciar(); // ciclo de venda: cutuca quem gerou pagamento e não pagou
   posvenda.iniciar(); // depois da entrega: pergunta se ativou · reativa quem sumiu
 });

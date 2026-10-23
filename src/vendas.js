@@ -116,6 +116,57 @@ function marcar(codigo, passo) {
   return true;
 }
 
+// ── Venda que NAO passa pela Nerix (XPag, em MXN) ────────────
+
+/**
+ * Procura uma venda externa ja registrada por qualquer um dos identificadores
+ * dela (transaction_id, e2e, external_id, o codigo que o operador digitou).
+ * Devolve a chave do registro ou null.
+ */
+function acharVendaExterna(ids) {
+  const alvo = (ids || []).map((i) => String(i || '').trim().toUpperCase()).filter(Boolean);
+  if (!alvo.length) return null;
+  for (const [chave, reg] of Object.entries(dados.pedidos)) {
+    if (reg.origem !== 'xpag' || !Array.isArray(reg.ids)) continue;
+    if (reg.ids.some((i) => alvo.includes(String(i).toUpperCase()))) return chave;
+  }
+  return null;
+}
+
+/**
+ * Registra uma venda externa, UMA vez. Devolve { novo, chave }.
+ *
+ * Mesma ideia do marcar(): a checagem e a gravacao sao o mesmo passo, entao
+ * dois webhooks juntos (ou o webhook e o #xpag registrar) nao contam em dobro.
+ * Entra no mesmo vendas.json que o resumo e o #vendas leem, com o carimbo
+ * `notificado` (quando) e `valor` + `moeda`.
+ */
+function registrarVendaExterna({ chave, ids, valor, moeda, origem = 'xpag', quando = Date.now(), extras = {} }) {
+  const ja = acharVendaExterna(ids);
+  if (ja) return { novo: false, chave: ja };
+  const k = String(chave);
+  if (dados.pedidos[k]) return { novo: false, chave: k };
+  dados.pedidos[k] = {
+    visto: Date.now(),
+    notificado: quando,
+    valor: Number(valor),
+    moeda: String(moeda).toUpperCase(),
+    origem,
+    ids: [...new Set((ids || []).filter(Boolean).map(String))],
+    ...extras,
+  };
+  persist();
+  return { novo: true, chave: k };
+}
+
+/** Vendas externas de um dia (AAAA-MM-DD em Brasilia). */
+function vendasExternasDoDia(dia) {
+  const fuso = (ms) => new Date(ms - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  return Object.entries(dados.pedidos)
+    .filter(([, r]) => r.origem === 'xpag' && r.notificado && fuso(r.notificado) === dia)
+    .map(([chave, reg]) => ({ chave, ...reg }));
+}
+
 // ── Telefone ─────────────────────────────────────────────────
 
 /**
@@ -385,6 +436,9 @@ async function notificarVenda(pedido) {
   // pedir à Nerix de novo. A trava acima já garante uma vez por pedido.
   if (Number.isFinite(pedido.valor)) {
     dados.pedidos[String(pedido.codigo)].valor = pedido.valor;
+    // A Nerix vende em reais. A moeda fica gravada para o resumo somar por
+    // moeda (venda da XPag em MXN entra pelo registrarVendaExterna).
+    dados.pedidos[String(pedido.codigo)].moeda = 'BRL';
     persist();
   }
 
@@ -1071,6 +1125,10 @@ module.exports = {
   complementarDoPainel,
   jaFeito,
   marcar,
+  acharVendaExterna,
+  registrarVendaExterna,
+  vendasExternasDoDia,
+  persistir: persist,
   primeiroNome,
   _dados: () => dados,
 };

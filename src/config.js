@@ -149,6 +149,8 @@ const config = {
   // Sem as variaveis definidas o modulo fica inerte e diz isso no log, em vez
   // de quebrar o boot: o resto do bot nao tem nada a ver com pagamento.
   xpag: {
+    // Interruptor geral. Sem credenciais tambem fica inerte; isto desliga mesmo com elas.
+    enabled: process.env.XPAG_ENABLED !== 'false',
     url: (process.env.XPAG_API_URL || 'https://api.xpag.global').replace(/\/$/, ''),
     clientId: process.env.XPAG_CLIENT_ID || '',
     clientSecret: process.env.XPAG_CLIENT_SECRET || '',

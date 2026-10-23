@@ -77,20 +77,21 @@ function variar(chave, lista) {
   return texto;
 }
 
-const brl = (n) => 'R$ ' + Number(n).toFixed(2).replace('.', ',');
+const moeda = require('./moeda');
 
 function vendasDoDia(dia) {
   const pedidos = require('./vendas')._dados().pedidos || {};
   let qtd = 0;
-  let total = 0;
+  // Um total POR MOEDA: real e peso mexicano nunca se somam.
+  const totais = {};
   let semValor = 0;
   for (const reg of Object.values(pedidos)) {
     if (!reg.notificado || brt(reg.notificado).dia !== dia) continue;
     qtd++;
-    if (Number.isFinite(reg.valor)) total += reg.valor;
+    if (Number.isFinite(reg.valor)) moeda.somar(totais, reg.valor, reg.moeda);
     else semValor++;
   }
-  return { qtd, total, semValor };
+  return { qtd, totais, semValor };
 }
 
 function codigosDoDia(dia) {
@@ -129,7 +130,7 @@ async function montar({ agora = Date.now(), parcial = false } = {}) {
   const linhas = [
     `*${parcial ? 'Resumo parcial' : variar('titulo', TITULOS)}* —${d}/${mes}`,
     '',
-    `💰 Vendas: *${v.qtd}* (${brl(v.total)})`,
+    `💰 Vendas: *${v.qtd}* (${moeda.formatarTotais(v.totais)})`,
   ];
   if (v.semValor) linhas.push(`_${v.semValor} pedido(s) sem valor registrado, fora da soma._`);
 
